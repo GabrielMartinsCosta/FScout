@@ -119,6 +119,8 @@ class BodyPart(LenientStrEnum):
     BOTH_HANDS = "both_hands"
     LEFT_HAND = "left_hand"
     RIGHT_HAND = "right_hand"
+    KEEPER_ARM = "keeper_arm"
+    DROP_KICK = "drop_kick"
     UNKNOWN = "unknown"
 
 
@@ -258,7 +260,6 @@ class DuelType(LenientStrEnum):
 class DuelOutcome(LenientStrEnum):
     WON = "won"
     LOST = "lost"
-    SUCCESS = "success"
     UNKNOWN = "unknown"
 
 
@@ -274,6 +275,7 @@ class DefensiveActionType(LenientStrEnum):
     AERIAL_DUEL = "aerial_duel"
     DRIBBLED_PAST = "dribbled_past"
     ERROR = "error"
+    FIFTY_FIFTY = "fifty_fifty"
     UNKNOWN = "unknown"
 
 
@@ -283,7 +285,10 @@ class DefensiveActionType(LenientStrEnum):
 
 
 class GoalkeeperActionType(LenientStrEnum):
+    SHOT_FACED = "shot_faced"
     SHOT_SAVED = "shot_saved"
+    SHOT_SAVED_TO_POST = "shot_saved_to_post"
+    SHOT_SAVED_OFF_TARGET = "shot_saved_off_target"
     PENALTY_SAVED = "penalty_saved"
     SMOTHER = "smother"
     COLLECTED = "collected"
@@ -306,6 +311,14 @@ class GoalkeeperOutcome(LenientStrEnum):
     NO_TOUCH = "no_touch"
     CLAIM = "claim"
     PUNCHED_OUT = "punched_out"
+    CLEAR = "clear"
+    SAVED_TWICE = "saved_twice"
+    COLLECTED_TWICE = "collected_twice"
+    WON = "won"
+    SUCCESS_IN_PLAY = "success_in_play"
+    SUCCESS_OUT = "success_out"
+    LOST_IN_PLAY = "lost_in_play"
+    LOST_OUT = "lost_out"
     UNKNOWN = "unknown"
 
 

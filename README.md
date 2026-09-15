@@ -25,13 +25,15 @@ Ver [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) para o raciocínio completo e
 
 ## Estado atual
 
-Fase 0 concluída: domínio, schema e fundação de testes.
+Fases 0 e 1 concluídas: domínio, schema e ingestão da StatsBomb, validada contra a Copa
+América 2024 inteira.
 
 | Camada | Estado |
 |---|---|
-| `domain/` — vocabulário e geometria do campo | pronto, 33 testes |
-| `db/` — schema com 19 tabelas | pronto |
-| `ingestion/` — StatsBomb e CSV | próximo |
+| `domain/` — vocabulário e geometria do campo | pronto |
+| `db/` — schema com 20 tabelas e identidade entre fontes | pronto |
+| `ingestion/` — StatsBomb | pronto, validado |
+| `ingestion/` — Transfermarkt, Open-Meteo, API-Football | próximo |
 | `metrics/` — catálogo e motor | a fazer |
 | `api/` — FastAPI | a fazer |
 | `viz/` — Dash e Plotly | a fazer |
@@ -66,16 +68,29 @@ ingestão.
 ## Uso
 
 ```bash
-# Cria o banco
-python -c "from fscout.db.session import create_all; create_all()"
+# Temporadas disponíveis na StatsBomb Open Data (com filtro opcional)
+fscout competitions
+fscout competitions "copa america"
 
-# Testes
+# Carrega uma temporada: competição e temporada, na ordem da listagem acima
+fscout ingest 223 282              # Copa América 2024
+fscout ingest 43 106 --limit 5     # só as 5 primeiras partidas da Copa de 2022
+fscout ingest 223 282 --refresh    # recarrega o que já está no banco
+
+# Quantidade de registros por tabela
+fscout status
+
+# Testes (o de integração baixa ~4 MB na primeira vez)
 pytest
+pytest -m "not integration"        # sem acesso à rede
 
 # Lint e formatação
 ruff check src tests
 ruff format src tests
 ```
+
+A carga é idempotente: rodar o mesmo comando duas vezes não duplica nada, e uma carga
+interrompida retoma de onde parou.
 
 ## Estrutura
 
@@ -89,13 +104,13 @@ src/fscout/
 └── viz/         Interface.
 ```
 
-## Fonte de dados
+## Fontes de dados
 
-Primária: [StatsBomb Open Data](https://github.com/statsbomb/open-data), dados evento a
-evento sob licença de uso acadêmico e não comercial.
+Primária e já integrada: [StatsBomb Open Data](https://github.com/statsbomb/open-data),
+dados evento a evento.
 
-Secundária: adaptador CSV, para dados fornecidos por clube e para informações que nenhum
-provedor aberto registra (lesões, valor de mercado).
+Complementares, para o que a StatsBomb não tem — biografia, valor de mercado, lesões,
+clima, Brasileirão: avaliadas e priorizadas em [`docs/FONTES.md`](docs/FONTES.md).
 
-As limitações de cobertura e de granularidade de cada fonte estão declaradas na
+As limitações de cobertura e de granularidade estão declaradas na
 [seção 8 da arquitetura](docs/ARQUITETURA.md#8-limitações--a-serem-declaradas-no-texto).

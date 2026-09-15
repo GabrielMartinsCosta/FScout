@@ -13,16 +13,18 @@ from fscout.config import get_settings
 from fscout.db.base import Base
 
 
-@lru_cache(maxsize=1)
-def get_engine() -> Engine:
-    """Engine único do processo, configurado a partir de `Settings`."""
-    settings = get_settings()
-    url = settings.resolved_database_url
+def build_engine(url: str) -> Engine:
+    """Cria um engine para `url`, aplicando os ajustes de SQLite quando for o caso."""
     engine = create_engine(url, future=True)
-
     if url.startswith("sqlite"):
         _tune_sqlite(engine)
     return engine
+
+
+@lru_cache(maxsize=1)
+def get_engine() -> Engine:
+    """Engine único do processo, configurado a partir de `Settings`."""
+    return build_engine(get_settings().resolved_database_url)
 
 
 def _tune_sqlite(engine: Engine) -> None:
@@ -65,7 +67,7 @@ def session_scope() -> Iterator[Session]:
         session.close()
 
 
-def create_all() -> None:
+def create_all(engine: Engine | None = None) -> None:
     """Cria as tabelas que ainda não existem.
 
     Suficiente enquanto o schema está em construção. A partir do momento em que houver
@@ -75,11 +77,11 @@ def create_all() -> None:
     """
     import fscout.db.models  # noqa: F401  (registra os mapeamentos antes do create_all)
 
-    Base.metadata.create_all(get_engine())
+    Base.metadata.create_all(engine or get_engine())
 
 
-def drop_all() -> None:
+def drop_all(engine: Engine | None = None) -> None:
     """Remove todas as tabelas. Destrutivo; existe para recriar o banco em testes."""
     import fscout.db.models  # noqa: F401
 
-    Base.metadata.drop_all(get_engine())
+    Base.metadata.drop_all(engine or get_engine())

@@ -339,3 +339,30 @@ def is_progressive(x1: float, y1: float, x2: float, y2: float) -> bool:
     if not starts_own_half and not ends_own_half:
         return gain >= PROGRESSIVE_GAIN_OPPONENT_HALF_M
     return False
+
+
+# ---------------------------------------------------------------------------------------
+# Referência defensiva: a própria área
+# ---------------------------------------------------------------------------------------
+
+# Margem de "perto da área", em jardas (~10 m): a distância de uma cobrança de falta
+# frontal perigosa.
+NEAR_BOX_MARGIN = 11.0
+
+
+def in_own_penalty_area(x: float, y: float) -> bool:
+    """Ponto dentro da grande área **defendida** por quem executou a ação.
+
+    As coordenadas estão sempre no sentido de ataque de quem age, então a própria área
+    fica em `x` baixo. Como a área é simétrica em `y`, basta espelhar `x`.
+    """
+    return in_penalty_area(PITCH_LENGTH - x, y)
+
+
+def near_own_penalty_area(x: float, y: float, margin: float = NEAR_BOX_MARGIN) -> bool:
+    """Ponto dentro da própria grande área ou a até `margin` jardas dela."""
+    mirrored_x = PITCH_LENGTH - x
+    return (
+        mirrored_x >= PENALTY_AREA_MIN_X - margin
+        and PENALTY_AREA_MIN_Y - margin <= y <= PENALTY_AREA_MAX_Y + margin
+    )

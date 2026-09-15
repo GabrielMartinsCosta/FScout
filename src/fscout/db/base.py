@@ -35,16 +35,18 @@ def enum_column(enum_cls: type[PyEnum], **kwargs: Any) -> Mapped[Any]:
 
 
 class SourceRefMixin:
-    """Rastreia de qual fonte veio cada registro e qual era seu identificador lá.
+    """Origem de um registro que pertence a uma única fonte e nunca é combinado.
 
-    O projeto ingere StatsBomb, CSV de clube e — futuramente — provedores comerciais.
-    Sem esse par, duas fontes que descrevem o mesmo jogador colidem ou duplicam.
-    Com ele, cada tabela ganha uma chave natural `(source, source_id)` que torna a
-    ingestão idempotente: reprocessar a mesma partida atualiza em vez de duplicar.
+    Vale para eventos: duas fontes que descrevem a mesma partida produzem sequências de
+    ações diferentes, que não se fundem. Entidades que as fontes compartilham — atleta,
+    clube, partida — não usam este mixin; a identidade delas em cada fonte fica em
+    `external_ids`, para que o mesmo atleta vindo de duas fontes seja um registro só.
+
+    O índice único `(source, source_id)` é declarado em cada tabela e já cobre a busca.
     """
 
-    source: Mapped[str] = mapped_column(String(32), index=True)
-    source_id: Mapped[str] = mapped_column(String(64), index=True)
+    source: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[str] = mapped_column(String(64))
 
 
 class TimestampMixin:

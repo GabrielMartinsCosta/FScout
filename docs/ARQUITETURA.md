@@ -94,14 +94,31 @@ reingerir nada.
 ### Projeções — visões tipadas por família
 
 `shots`, `passes`, `dribbles`, `defensive_actions`, `goalkeeper_actions`,
-`disciplinary_actions`. Cada uma em relação 1:1 com `events`, contendo os atributos
-específicos daquela família já tipados e indexados.
+`disciplinary_actions`. Cada uma contém os atributos específicos daquela família já tipados
+e indexados. Quase todas têm uma linha por evento; `defensive_actions` admite duas, porque
+um corte de cabeça que venceu a disputa pelo alto é, ao mesmo tempo, corte e duelo aéreo.
 
 **Por que não consultar o JSON diretamente?** Porque quase toda métrica pedida é um filtro
 sobre poucos atributos de uma única família. Em colunas indexadas isso é um `WHERE` que usa
 índice; dentro de um blob JSON, em SQLite, é varredura completa da tabela. Com centenas de
 milhares de eventos, a diferença é entre um painel que responde e um que trava. O custo é um
 mapeamento mecânico na ingestão, pago uma única vez.
+
+### Identidade entre fontes — `external_ids`
+
+Atleta, clube, competição e partida não guardam de qual fonte vieram. Existem uma vez, e a
+tabela `external_ids` liga cada um ao identificador que tem em cada fonte, registrando como
+a ligação foi estabelecida (`created`, `exact_id`, `name_team_season`, `manual`) e com que
+confiança.
+
+Sem isso, o mesmo atleta vindo da StatsBomb e do Transfermarkt viraria dois registros, e
+toda estatística dele ficaria dividida. A regra de atualização é simples: a fonte que criou
+o registro pode atualizá-lo; uma fonte ligada depois só preenche campos vazios.
+
+Eventos são a exceção e mantêm `(source, source_id)` na própria tabela: duas fontes que
+descrevem a mesma partida produzem sequências de ações diferentes, que não se fundem.
+
+A estratégia de ligação entre fontes está em [`FONTES.md`](FONTES.md).
 
 ### Desnormalizações deliberadas
 
@@ -259,26 +276,13 @@ Consequências práticas:
 
 ## 7. Fontes de dados
 
-### StatsBomb Open Data — fonte primária
+A StatsBomb Open Data é a fonte primária e a única integrada até aqui: é a única aberta com
+dados evento a evento no nível de detalhe que a especificação exige. As lacunas dela —
+biografia, valor de mercado, lesões, clima, Brasileirão — são cobertas por fontes
+complementares, avaliadas e priorizadas em [`FONTES.md`](FONTES.md).
 
-Dados evento a evento, gratuitos, com licença de uso não comercial e acadêmico. Trazem
-coordenadas, parte do corpo, técnica, padrão de jogada, xG e resultado por evento — que é
-exatamente o insumo que a especificação exige.
-
-Cobertura: Copa do Mundo masculina e feminina, Eurocopa, temporadas de La Liga com Messi,
-finais de Champions League, FA Women's Super League, Bundesliga 2015/16, entre outras.
-
-### Adaptador CSV — fonte secundária
-
-Para dados fornecidos por clube e para o que nenhum provedor aberto registra: lesões, valor
-de mercado, contrato. Grava nas mesmas tabelas, com `source` distinto.
-
-### Por que o par `(source, source_id)` em toda tabela
-
-Duas fontes descrevendo o mesmo jogador colidiriam ou duplicariam. Com esse par, cada tabela
-ganha uma chave natural que torna a ingestão **idempotente**: reprocessar a mesma partida
-atualiza em vez de duplicar. Em um projeto em que a carga será executada dezenas de vezes
-durante o desenvolvimento, isso não é refinamento, é requisito.
+Todo adaptador de eventos entrega a partida no mesmo formato (`MatchBundle`), então uma
+fonte nova exige um mapeador, não mudanças na gravação.
 
 ---
 
@@ -289,16 +293,24 @@ Um TCC ganha credibilidade ao delimitar o que *não* faz. Estas são as fronteir
 **Não calculáveis a partir de dados de evento:**
 
 - Distância percorrida, número de sprints, velocidade média e máxima. Exigem *tracking data*
-  (posição de todos os 22 jogadores a 25 Hz), que não existe em fonte aberta. Foram
-  removidas do escopo.
+  (posição de todos os 22 jogadores a 25 Hz). Há amostras abertas (Metrica Sports,
+  SkillCorner) que permitem demonstrar o cálculo, mas não cobrem os atletas das competições
+  com eventos, então essas métricas não aparecem no perfil dos mesmos jogadores.
 - Velocidade do chute. Não é registrada.
 
 **Limitações da fonte:**
 
-- **Cobertura.** A StatsBomb Open Data não inclui o Campeonato Brasileiro. O exemplo do
-  enunciado (Bruno Henrique, Flamengo) não é reproduzível com a fonte primária; o painel
-  será demonstrado com atletas cobertos. O adaptador CSV existe justamente para que dados
-  brasileiros possam ser carregados se e quando houver acesso a eles.
+- **Cobertura.** A StatsBomb Open Data não inclui o Campeonato Brasileiro. Jogadores da
+  seleção brasileira aparecem com dados evento a evento na Copa América 2024. Para o
+  Brasileirão, a fonte avaliada (API-Football) entrega apenas estatística agregada.
+- **Ficha básica incompleta na fonte primária.** A StatsBomb não informa data de nascimento,
+  altura, peso nem pé preferencial. Idade, altura e pé dependem da ligação com o
+  Transfermarkt; peso não tem fonte aberta confiável.
+- **Escalações inconsistentes.** Os intervalos de posição da StatsBomb às vezes terminam
+  antes de começar ou se sobrepõem (na final de 2022, Messi somaria 207 minutos). A
+  minutagem é calculada pela união dos intervalos, cortada na substituição, e foi validada:
+  nas 64 combinações time-partida da Copa América 2024, a soma de minutos fica a menos de
+  3% de 11 jogadores em campo.
 - **Gol de peito.** A taxonomia de `body_part` para finalização tem apenas pé esquerdo, pé
   direito, cabeça e "outro". Gol de peito cai em "outro", indistinguível de joelho ou coxa.
 - **Duelo aéreo.** A fonte registra explicitamente o duelo aéreo *perdido*; o vencido é
@@ -309,8 +321,17 @@ Um TCC ganha credibilidade ao delimitar o que *não* faz. Estas são as fronteir
   105 × 68 m. O erro é sistemático e igual para todos os atletas, de modo que comparações
   não são afetadas — apenas valores absolutos.
 
-**Fora do escopo por prazo:** clima, salário e contrato (tabela existe, alimentação é
-manual), equipe como entidade analítica de primeira classe, modelo de xG próprio.
+**Convenções adotadas que precisam ser declaradas:**
+
+- **Minutagem nominal** (jogo inteiro vale 90, prorrogação 120) como base da normalização
+  por 90 minutos, para comparabilidade com fontes públicas. O tempo efetivo, com acréscimos,
+  é guardado à parte.
+- **Disputa de pênaltis** fica registrada, mas não conta como gol do atleta nem como minuto
+  jogado.
+- **Campo neutro** é inferido quando o estádio fica fora do país do mandante.
+
+**Fora do escopo por prazo:** salário, equipe como entidade analítica de primeira classe,
+modelo de xG próprio, segunda fonte de eventos (Wyscout).
 
 ---
 
@@ -322,12 +343,17 @@ manual), equipe como entidade analítica de primeira classe, modelo de xG própr
 | 2 | Projeções tipadas por família | `WHERE` indexado em vez de varredura sobre JSON | Consultar `qualifiers` diretamente |
 | 3 | Preservar o JSON bruto além das projeções | Métrica futura sem reingestão | Descartar o que não vira coluna |
 | 4 | SQLite com schema portável a Postgres | Zero infraestrutura; volume do TCC cabe | Postgres desde o início |
-| 5 | Chave `(source, source_id)` universal | Ingestão idempotente e multi-fonte | Confiar no ID da fonte primária |
+| 5 | Entidade canônica e `external_ids` | Combinar fontes sem duplicar atletas; ligação auditável | `(source, source_id)` em cada tabela |
 | 6 | Enums como texto com CHECK | Banco legível na consulta manual, portável | Inteiros ou ENUM nativo |
 | 7 | Conversão isotrópica jarda→metro | Preserva largura oficial do gol e ângulos | Reescalar para 105 × 68 m |
 | 8 | Zonas pré-calculadas em `events` | Mapa de calor fora do caminho crítico | Derivar em tempo de consulta |
 | 9 | Dash em vez de React | Concentra o esforço no motor analítico, que é a contribuição | SPA em React/TypeScript |
 | 10 | Catálogo de métricas declarativo | Interface se monta sozinha; vira anexo de metodologia | Uma função por métrica |
+| 11 | Tradução explícita do vocabulário da fonte | A StatsBomb escreve "Off T", "Ground Pass"; normalização automática erraria em silêncio | Normalizar texto automaticamente |
+| 12 | Minutagem nominal e efetiva | Nominal é comparável com fontes públicas; efetiva mede exposição real | Guardar só uma |
+| 13 | União de intervalos cortada na substituição | A escalação da fonte tem intervalos invertidos e sobrepostos | Somar intervalos |
+| 14 | Disputa de pênaltis marcada, não descartada | A cobrança é dado útil; gol de disputa não é gol do atleta | Excluir o período 5 |
+| 15 | Chave de temporada `competição-temporada` | O `season_id` da StatsBomb se repete entre competições | Usar o id da fonte |
 
 ---
 
@@ -337,6 +363,7 @@ manual), equipe como entidade analítica de primeira classe, modelo de xG própr
 FScout/
 ├── src/fscout/
 │   ├── config.py              Configuração via variáveis de ambiente
+│   ├── cli.py                 Comandos: competitions, ingest, status, init-db
 │   ├── domain/                Vocabulário e geometria. Sem I/O.
 │   │   ├── enums.py           Enums do futebol, tolerantes a valor desconhecido
 │   │   └── pitch.py           Zonas, distâncias, ângulos, progressão
@@ -345,18 +372,22 @@ FScout/
 │   │   ├── models.py          Schema
 │   │   └── session.py         Engine, sessão, PRAGMAs do SQLite
 │   ├── ingestion/
-│   │   ├── statsbomb/         Cliente, mapeador e adaptador
-│   │   ├── csv_adapter.py     Dados de clube e planilha manual
-│   │   └── pipeline.py        Orquestração idempotente
-│   ├── metrics/
-│   │   ├── registry.py        MetricSpec e catálogo
-│   │   ├── context.py         Slice (recortes)
-│   │   ├── predicates.py      Blocos reutilizáveis de filtro
-│   │   ├── definitions/       As métricas, por família
-│   │   └── engine.py          Avaliação do catálogo
-│   ├── api/                   FastAPI
-│   └── viz/                   Dash
+│   │   ├── bundle.py          Contrato entre adaptadores e carga (MatchBundle)
+│   │   ├── loader.py          Gravação idempotente e resolução de identidade
+│   │   ├── pipeline.py        Orquestração, auditoria em ingestion_runs
+│   │   └── statsbomb/
+│   │       ├── client.py      Download com cache em disco
+│   │       ├── vocab.py       Tabelas de tradução do vocabulário
+│   │       ├── clock.py       Relógio da partida e minutagem
+│   │       ├── chains.py      Pré-assistência e consequências do drible
+│   │       └── mapper.py      JSON da fonte para linhas do schema
+│   ├── metrics/               Catálogo e motor de métricas (Fase 2)
+│   ├── api/                   FastAPI (Fase 3)
+│   └── viz/                   Dash (Fase 4)
 ├── tests/
 ├── docs/
+│   ├── ARQUITETURA.md
+│   ├── FONTES.md
+│   └── ROADMAP.md
 └── data/                      raw (cache) / processed / db
 ```

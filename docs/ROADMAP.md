@@ -25,24 +25,50 @@ valem mais que superfície. Todo corte abaixo segue essa regra.
 - [x] Lint e formatação configurados e limpos
 - [x] `docs/ARQUITETURA.md`
 
-## Fase 1 — Ingestão · Semanas 2 e 3
+## Fase 1 — Ingestão StatsBomb · Semana 1 — **concluída**
 
-Sem dado no banco, nada mais pode ser validado. É a fase de maior risco do cronograma.
+Planejada para as semanas 2 e 3, concluída ainda na semana 1. As duas semanas ganhas vão
+para a Fase 1b.
 
-- Cliente StatsBomb com cache em disco (`data/raw/`), para não rebaixar a cada execução
-- Mapeador JSON → domínio: competições, temporadas, partidas, escalações, eventos
-- Mapeadores das projeções: `shots`, `passes`, `dribbles`, `defensive_actions`,
-  `goalkeeper_actions`, `disciplinary_actions`
-- Resolução de cadeia de posse: pré-assistência, consequência do drible, rebote
-- Cálculo de minutagem a partir de escalação e substituições
-- Pipeline idempotente com registro em `ingestion_runs`
-- CLI: `fscout ingest --competition 11 --season 90`
+- [x] Cliente StatsBomb com cache em disco e download paralelo
+- [x] Tabelas de tradução explícitas do vocabulário, conferidas em 129 mil eventos
+- [x] Mapeador de competições, partidas, escalações, eventos e das seis projeções
+- [x] Encadeamentos: pré-assistência e consequências do drible
+- [x] Minutagem nominal e efetiva, robusta a escalações inconsistentes
+- [x] Identidade entre fontes (`external_ids`), pronta para a combinação com outras fontes
+- [x] Pipeline idempotente, uma transação por partida, auditoria em `ingestion_runs`
+- [x] CLI: `fscout competitions`, `fscout ingest`, `fscout status`
+- [x] 89 testes, incluindo ponta a ponta com a final da Copa de 2022
 
-**Pronto quando:** uma competição inteira carrega, recarregar não duplica nada, e os
-totais de gols por partida batem com o placar registrado em `matches`.
+**Validação com a Copa América 2024 completa** — 32 partidas, 100.324 eventos, 20 segundos:
 
-**Risco principal:** a cadeia de posse é a parte sutil. Se atrasar, entregue a ingestão
-sem `led_to_*` e `is_pre_assist` e volte a eles na Semana 5 — o resto não depende disso.
+| Verificação | Resultado |
+|---|---|
+| Placar reconstruído a partir dos eventos | 32 de 32 partidas conferem |
+| Valores da fonte fora do vocabulário | nenhum |
+| Artilheiro | Lautaro Martínez, 5 gols — confere com o registro oficial |
+| Líder de assistências | James Rodríguez, 6 — confere com o registro oficial |
+| Soma de minutos por time e partida | 64 de 64 a menos de 3% de 11 jogadores em campo |
+
+A validação contra a partida real encontrou um defeito que os testes sintéticos não
+pegariam: a escalação da StatsBomb tem intervalos invertidos e sobrepostos, e Messi somava
+207 minutos na final. A correção está documentada em `clock.py` e coberta por testes que
+reproduzem os casos reais.
+
+## Fase 1b — Ficha do atleta e fontes complementares · Semanas 2 e 3
+
+Detalhes e justificativas em [`FONTES.md`](FONTES.md).
+
+- Adaptador transfermarkt-datasets: data de nascimento, altura, pé, dupla nacionalidade,
+  valor de mercado, fim de contrato, transferências
+- Ligação de registros entre StatsBomb e Transfermarkt por nome, nacionalidade e equipe na
+  mesma temporada, com fila de revisão manual
+- Validação da ligação: precisão numa amostra conferida à mão e cobertura
+- Open-Meteo: clima de cada partida a partir da coordenada do estádio
+- Carga das competições-alvo: Copa do Mundo 2022, Euro 2024, La Liga 2020/21
+
+**Pronto quando:** os atletas da Copa América 2024 têm idade e altura preenchidas, e a
+precisão da ligação está medida e documentada.
 
 ## Fase 2 — Motor de métricas · Semanas 4 e 5
 
@@ -88,7 +114,7 @@ Prioridade estrita. Se o tempo acabar, acaba de baixo para cima.
 
 ## Fase 5 — Consolidação · Semanas 10 e 11
 
-- Adaptador CSV para dados de clube, lesões e valor de mercado
+- API-Football: histórico de lesões e totais do Brasileirão, respeitando a cota diária
 - Exportação do catálogo como tabela de definições operacionais (anexo do TCC)
 - Testes de ponta a ponta e ampliação de cobertura
 - Roteiro de reprodução: do clone à primeira tela
@@ -104,18 +130,19 @@ Deixada vazia de propósito. Ela vai ser usada.
 
 | Cortado | Motivo | Estado |
 |---|---|---|
-| Distância percorrida, sprints, velocidade | Exige *tracking data*, inexistente em fonte aberta | Impossível — declarar como limitação |
+| Distância percorrida, sprints, velocidade | Exige *tracking data*, que não existe para as competições com eventos | Demonstrável só em amostra aberta (Metrica, SkillCorner) — opcional |
 | Velocidade de chute | Não registrada por nenhuma fonte acessível | Impossível |
-| Desempenho por condição climática | Sem fonte confiável e sem massa de dados suficiente | Trabalho futuro |
-| Salário e contrato | Tabela existe; alimentação seria manual e de baixa confiabilidade | Trabalho futuro |
+| Desempenho por condição climática | Open-Meteo entrega o clima histórico por coordenada e hora | **Reincluído** na Fase 1b |
+| Salário e contrato | O Transfermarkt traz fim de contrato; salário não tem fonte aberta confiável | Contrato reincluído na Fase 1b; salário segue fora |
 | Equipe como entidade analítica | Dobra o escopo do motor de métricas | Fase 2 do projeto, pós-TCC |
 | Modelo de xG próprio | Usar o `xg` da fonte; treinar um modelo é um TCC inteiro | Trabalho futuro |
-| Scraping de FBref/SofaScore | Entrega dado agregado, que não sustenta a análise granular | Descartado na escolha de fonte |
+| Raspagem de FBref, SofaScore, FotMob | APIs não oficiais, termos de uso restritivos, quebram sem aviso | Descartada; substituída por fontes com licença ou API oficial |
 | Interface em React | Não é a contribuição do trabalho | Substituída por Dash |
 
-Os dois primeiros itens não são corte de prazo: são impossibilidades da fonte. Trate-os
-como limitação metodológica declarada, não como funcionalidade faltante — é assim que se
-apresenta numa defesa.
+Os dois primeiros itens não são corte de prazo, e sim limites das fontes: velocidade de chute
+não existe em lugar nenhum, e métricas físicas só existem em amostras que não cobrem os
+mesmos atletas. Trate-os como limitação metodológica declarada, não como funcionalidade
+faltante — é assim que se apresenta numa defesa.
 
 ---
 
@@ -133,11 +160,6 @@ apresenta numa defesa.
 
 ## Próximo passo imediato
 
-Fase 1, cliente StatsBomb e mapeador de partidas. O primeiro alvo concreto:
-
-```
-fscout ingest --competition 11 --season 90    # La Liga 2020/21
-```
-
-e, ao final, uma consulta que responda quantos gols de canhota de fora da área foram
-marcados na temporada. É o teste que fecha a Fase 1 e abre a Fase 2.
+Fase 1b, começando pelo Transfermarkt: é o que preenche a ficha básica do atleta, que a
+especificação trata como fundamental, e é onde a ligação entre fontes é construída e
+medida.

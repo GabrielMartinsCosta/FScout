@@ -41,6 +41,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["integration: baixa dados reais da StatsBomb Open Data (usa o cache local)"]
 
 [tool.mypy]
 python_version = "3.11"

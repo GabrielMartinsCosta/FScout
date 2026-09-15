@@ -1,18 +1,22 @@
 """Schema do FScout.
 
-Organização em três camadas:
+Organização em quatro partes:
 
 1. **Dimensões** — país, competição, temporada, clube, atleta, partida, participação.
    Respondem "quem, onde, quando" e sustentam todos os recortes pedidos
    (por campeonato, por janela de datas, por adversário, casa/fora).
 
-2. **Fato** — `events`, uma linha por ação registrada em campo. É a tabela canônica:
-   nada é apagado dela, e o JSON `qualifiers` guarda tudo que ainda não foi traduzido
-   para coluna. Isso permite criar métricas novas depois sem reingerir nada.
+2. **Identidade entre fontes** — `external_ids`. Uma entidade canônica (o atleta Messi)
+   tem um id em cada fonte que a descreve. As dimensões não guardam origem; a tabela de
+   ligação guarda, junto com a forma como cada ligação foi estabelecida.
 
-3. **Projeções** — `shots`, `passes`, `dribbles`, `defensive_actions`,
+3. **Fato** — `events`, uma linha por ação registrada em campo. É a tabela canônica de
+   ações: nada é apagado dela, e o JSON `qualifiers` guarda tudo que ainda não foi
+   traduzido para coluna. Isso permite criar métricas novas depois sem reingerir nada.
+
+4. **Projeções** — `shots`, `passes`, `dribbles`, `defensive_actions`,
    `goalkeeper_actions`, `disciplinary_actions`. Cada uma é uma visão tipada e indexada
-   de uma família de eventos, em relação 1:1 com `events`.
+   de uma família de eventos.
 
 Por que projeções em vez de consultar o JSON direto? Porque quase toda métrica pedida é
 um filtro sobre poucos atributos de uma família ("gol de canhota, de fora da área, vindo
@@ -92,11 +96,10 @@ class Country(Base):
     longitude: Mapped[float | None] = mapped_column(Float)
 
 
-class Competition(Base, SourceRefMixin):
+class Competition(Base):
     """Competição. O campo `type` sustenta os recortes nacional/estadual/continental."""
 
     __tablename__ = "competitions"
-    __table_args__ = (UniqueConstraint("source", "source_id", name="uq_competition_source"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), index=True)
@@ -111,11 +114,10 @@ class Competition(Base, SourceRefMixin):
     seasons: Mapped[list[Season]] = relationship(back_populates="competition")
 
 
-class Season(Base, SourceRefMixin):
+class Season(Base):
     """Temporada de uma competição."""
 
     __tablename__ = "seasons"
-    __table_args__ = (UniqueConstraint("source", "source_id", name="uq_season_source"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     competition_id: Mapped[int] = mapped_column(ForeignKey("competitions.id"), index=True)
@@ -126,11 +128,10 @@ class Season(Base, SourceRefMixin):
     competition: Mapped[Competition] = relationship(back_populates="seasons")
 
 
-class Team(Base, SourceRefMixin):
+class Team(Base):
     """Clube ou seleção."""
 
     __tablename__ = "teams"
-    __table_args__ = (UniqueConstraint("source", "source_id", name="uq_team_source"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), index=True)
@@ -142,19 +143,22 @@ class Team(Base, SourceRefMixin):
     country: Mapped[Country | None] = relationship()
 
 
-class Player(Base, SourceRefMixin):
+class Player(Base):
     """Atleta.
 
     Só os atributos estáveis da pessoa ficam aqui. Tudo que varia no tempo — clube,
     posição jogada, valor de mercado — vive em tabelas próprias com vigência.
+
+    Cada fonte preenche o que tem: a StatsBomb traz nome e nacionalidade, mas não data de
+    nascimento, altura, peso nem pé preferencial. Esses campos ficam nulos até que uma
+    fonte biográfica seja ligada ao mesmo atleta via `external_ids`.
     """
 
     __tablename__ = "players"
-    __table_args__ = (UniqueConstraint("source", "source_id", name="uq_player_source"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), index=True)
-    full_name: Mapped[str | None] = mapped_column(String(192))
+    full_name: Mapped[str | None] = mapped_column(String(192), index=True)
     nickname: Mapped[str | None] = mapped_column(String(96))
     birth_date: Mapped[date | None] = mapped_column(Date)
     height_cm: Mapped[int | None] = mapped_column(Integer)
@@ -199,8 +203,9 @@ class PlayerNationality(Base):
 class PlayerClubSpell(Base):
     """Passagem do atleta por um clube: o histórico de clubes pedido.
 
-    `end_date` nulo significa vínculo vigente. Empréstimos são marcados para que o
-    histórico distinga transferência definitiva de cessão temporária.
+    Com `source = "derived"`, as datas são a primeira e a última partida observada nos
+    dados carregados, não as datas contratuais. Fontes de transferências gravam com a
+    própria origem, e aí `end_date` nulo significa vínculo vigente.
     """
 
     __tablename__ = "player_club_spells"
@@ -211,23 +216,20 @@ class PlayerClubSpell(Base):
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
     is_loan: Mapped[bool] = mapped_column(Boolean, default=False)
-    source: Mapped[str] = mapped_column(String(32), default="derived")
+    source: Mapped[str] = mapped_column(String(32), default="derived", index=True)
 
     player: Mapped[Player] = relationship(back_populates="club_spells")
     team: Mapped[Team] = relationship()
 
 
-class Match(Base, SourceRefMixin):
+class Match(Base):
     """Partida."""
 
     __tablename__ = "matches"
-    __table_args__ = (
-        UniqueConstraint("source", "source_id", name="uq_match_source"),
-        Index("ix_match_season_date", "season_id", "match_date"),
-    )
+    __table_args__ = (Index("ix_match_season_date", "season_id", "match_date"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    season_id: Mapped[int] = mapped_column(ForeignKey("seasons.id"), index=True)
+    season_id: Mapped[int] = mapped_column(ForeignKey("seasons.id"))
     match_date: Mapped[date] = mapped_column(Date, index=True)
     kickoff: Mapped[datetime | None] = mapped_column(DateTime)
     home_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
@@ -253,6 +255,9 @@ class Appearance(Base):
     CASE para descobrir de que lado o jogador estava — em toda consulta do sistema.
     Com eles, viram um WHERE indexado. A duplicação é segura porque o valor é derivado
     na ingestão e nunca editado depois.
+
+    `minutes_played` é nominal (um jogo inteiro vale 90) e é a base de toda normalização
+    por 90 minutos. `seconds_on_pitch` é o tempo efetivo, com acréscimos.
     """
 
     __tablename__ = "appearances"
@@ -263,7 +268,7 @@ class Appearance(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
-    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
     opponent_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
     venue: Mapped[Venue] = enum_column(Venue, default=Venue.UNKNOWN, index=True)
@@ -277,6 +282,7 @@ class Appearance(Base):
     minute_on: Mapped[int | None] = mapped_column(Integer)
     minute_off: Mapped[int | None] = mapped_column(Integer)
     minutes_played: Mapped[int] = mapped_column(Integer, default=0)
+    seconds_on_pitch: Mapped[int] = mapped_column(Integer, default=0)
 
     # Placar do ponto de vista do jogador: evita recalcular clean sheet a cada consulta.
     goals_for: Mapped[int | None] = mapped_column(Integer)
@@ -289,17 +295,59 @@ class Appearance(Base):
 
 
 # =========================================================================================
+# Identidade entre fontes
+# =========================================================================================
+
+
+class ExternalId(Base, TimestampMixin):
+    """Identificador de uma entidade canônica numa fonte de dados.
+
+    Cada fonte numera atletas, clubes e partidas do seu jeito. Esta tabela liga cada
+    número externo à entidade do FScout, o que permite combinar fontes sem duplicar
+    ninguém: a StatsBomb cria o atleta, e uma fonte biográfica carregada depois se liga
+    ao mesmo registro e preenche data de nascimento e altura.
+
+    `matched_by` registra como a ligação foi estabelecida — `created` (a fonte criou o
+    registro), `exact_id`, `name_birthdate`, `manual` —, e `confidence` quantifica
+    ligações inferidas. Isso torna o cruzamento entre fontes auditável: para qualquer
+    atleta é possível mostrar de onde veio cada dado e por que dois registros foram
+    considerados a mesma pessoa.
+
+    `entity` é o nome da tabela. Não há chave estrangeira real porque a tabela serve a
+    várias entidades; a integridade é garantida pela camada de carga.
+    """
+
+    __tablename__ = "external_ids"
+    __table_args__ = (
+        UniqueConstraint("entity", "source", "source_id", name="uq_external_id"),
+        Index("ix_external_id_entity", "entity", "entity_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity: Mapped[str] = mapped_column(String(32))
+    entity_id: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(32))
+    source_id: Mapped[str] = mapped_column(String(64))
+    matched_by: Mapped[str] = mapped_column(String(32))
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+
+
+# =========================================================================================
 # Fato: eventos
 # =========================================================================================
 
 
 class Event(Base, SourceRefMixin):
-    """Uma ação registrada em campo. Tabela canônica do sistema.
+    """Uma ação registrada em campo. Tabela canônica de ações.
 
     Campos comuns a todo tipo de evento ficam em colunas; o que é específico de um tipo
     vai para a projeção correspondente, e o restante permanece em `qualifiers`. Nada
     vindo da fonte é descartado, então uma métrica pensada daqui a seis meses pode ser
     calculada sobre os dados já carregados.
+
+    Os índices são poucos de propósito: cada índice encarece a carga de centenas de
+    milhares de linhas, e as consultas analíticas partem quase sempre de atleta ou de
+    partida, que os índices compostos já cobrem pelo prefixo.
     """
 
     __tablename__ = "events"
@@ -311,16 +359,16 @@ class Event(Base, SourceRefMixin):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"))
 
     sequence: Mapped[int] = mapped_column(Integer)
     period: Mapped[int] = mapped_column(Integer)
-    minute: Mapped[int] = mapped_column(Integer, index=True)
+    minute: Mapped[int] = mapped_column(Integer)
     second: Mapped[int] = mapped_column(Integer, default=0)
 
     type: Mapped[EventType] = enum_column(EventType, index=True)
-    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), index=True)
-    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"))
+    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
     position: Mapped[str | None] = mapped_column(String(48))
 
     # Localização de origem. Nula em eventos sem posição (substituição, fim de tempo).
@@ -329,20 +377,21 @@ class Event(Base, SourceRefMixin):
 
     # Zonas pré-calculadas a partir de (x, y). Gravadas na ingestão porque mapa de calor
     # e recorte por setor de campo são consultados o tempo todo e a derivação é imutável.
-    third: Mapped[VerticalThird | None] = enum_column(VerticalThird, nullable=True, index=True)
-    lane: Mapped[Lane | None] = enum_column(Lane, nullable=True, index=True)
+    third: Mapped[VerticalThird | None] = enum_column(VerticalThird, nullable=True)
+    lane: Mapped[Lane | None] = enum_column(Lane, nullable=True)
     grid_col: Mapped[int | None] = mapped_column(Integer)
     grid_row: Mapped[int | None] = mapped_column(Integer)
 
     play_pattern: Mapped[PlayPattern | None] = enum_column(PlayPattern, nullable=True, index=True)
-    possession: Mapped[int | None] = mapped_column(Integer, index=True)
+    possession: Mapped[int | None] = mapped_column(Integer)
     possession_team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"))
 
     duration: Mapped[float | None] = mapped_column(Float)
     under_pressure: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Tudo que a fonte trouxe e ainda não virou coluna. Rede de segurança contra
-    # reingestão quando uma métrica nova precisar de um atributo não previsto.
+    # Tudo que a fonte trouxe e ainda não virou coluna, exceto os freeze frames de chute
+    # (posição dos 22 jogadores no momento da finalização). Eles multiplicam o tamanho do
+    # banco e continuam disponíveis no cache bruto em data/raw.
     qualifiers: Mapped[dict | None] = mapped_column(JSON)
 
     match: Mapped[Match] = relationship()
@@ -361,6 +410,9 @@ class Shot(Base):
     Cobre a lista de recortes de gol pedida: pé usado, cabeça, dentro ou fora da área,
     pequena área, pênalti, falta, acrobacia, origem em escanteio ou cruzamento, canto
     do gol atingido, e o aproveitamento derivado de `outcome`.
+
+    Cobranças da disputa de pênaltis ficam marcadas com `is_shootout`: são finalizações
+    reais, úteis para a análise de cobrança, mas não são gols do atleta.
     """
 
     __tablename__ = "shots"
@@ -383,6 +435,7 @@ class Shot(Base):
     is_on_target: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     hit_post: Mapped[bool] = mapped_column(Boolean, default=False)
     was_blocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_shootout: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
     # Geometria da finalização.
     distance_m: Mapped[float | None] = mapped_column(Float)
@@ -400,17 +453,22 @@ class Shot(Base):
     follows_dribble: Mapped[bool] = mapped_column(Boolean, default=False)
     open_goal: Mapped[bool] = mapped_column(Boolean, default=False)
     deflected: Mapped[bool] = mapped_column(Boolean, default=False)
+    one_on_one: Mapped[bool] = mapped_column(Boolean, default=False)
 
     xg: Mapped[float | None] = mapped_column(Float)
 
-    # Passe que gerou a finalização; permite ligar assistência a gol e computar pré-assistência.
+    # Passe que gerou a finalização; liga assistência a gol e origem em cruzamento.
     key_pass_event_id: Mapped[int | None] = mapped_column(ForeignKey("events.id"))
 
     event: Mapped[Event] = relationship(foreign_keys=[event_id])
 
 
 class Pass(Base):
-    """Passe, incluindo cruzamentos e cobranças de bola parada."""
+    """Passe, incluindo cruzamentos e cobranças de bola parada.
+
+    `is_progressive`, `into_penalty_area` e `into_six_yard_box` são geométricos: valem
+    para a tentativa. O recorte "passes progressivos certos" combina com `is_complete`.
+    """
 
     __tablename__ = "passes"
     __table_args__ = (
@@ -419,7 +477,7 @@ class Pass(Base):
     )
 
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), primary_key=True)
-    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), index=True)
+    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
     recipient_player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), index=True)
 
@@ -440,13 +498,14 @@ class Pass(Base):
     is_cross: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_switch: Mapped[bool] = mapped_column(Boolean, default=False)
     is_through_ball: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_cutback: Mapped[bool] = mapped_column(Boolean, default=False)
     is_progressive: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     into_penalty_area: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     into_six_yard_box: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # Cadeia de criação: passe que virou finalização, que virou gol, e o passe anterior a ele.
+    # Cadeia de criação. `is_shot_assist` inclui o passe que virou gol.
     is_shot_assist: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    is_goal_assist: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_goal_assist: Mapped[bool] = mapped_column(Boolean, default=False)
     is_pre_assist: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
     event: Mapped[Event] = relationship(foreign_keys=[event_id])
@@ -469,11 +528,13 @@ class Dribble(Base):
     overrun: Mapped[bool] = mapped_column(Boolean, default=False)
     in_penalty_area: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
-    # Consequência imediata do drible, resolvida na ingestão percorrendo a posse.
+    # Consequência do drible na mesma posse, resolvida na ingestão (ver `chains.py`).
     # Materializa "quantas grandes jogadas nasceram de um drible" sem recursão em consulta.
     led_to_shot: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     led_to_goal: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    led_to_key_pass: Mapped[bool] = mapped_column(Boolean, default=False)
     led_to_assist: Mapped[bool] = mapped_column(Boolean, default=False)
+    led_to_pre_assist: Mapped[bool] = mapped_column(Boolean, default=False)
     drew_foul: Mapped[bool] = mapped_column(Boolean, default=False)
 
     event: Mapped[Event] = relationship(foreign_keys=[event_id])
@@ -485,19 +546,29 @@ class DefensiveAction(Base):
     Desarme, interceptação, corte, bloqueio, recuperação, pressão e duelo aéreo chegam
     como tipos distintos na fonte. Unificá-los aqui permite compor índices defensivos
     agregados sem uma UNION de seis tabelas.
+
+    Um evento pode gerar mais de uma linha: um corte de cabeça que venceu a disputa pelo
+    alto é, ao mesmo tempo, um corte e um duelo aéreo ganho. Daí a chave própria e a
+    unicidade por `(event_id, action_type)`.
+
+    `is_successful` é nulo quando a ação não tem desfecho (pressão).
     """
 
     __tablename__ = "defensive_actions"
-    __table_args__ = (Index("ix_defensive_player_type", "player_id", "action_type"),)
+    __table_args__ = (
+        UniqueConstraint("event_id", "action_type", name="uq_defensive_event_action"),
+        Index("ix_defensive_player_type", "player_id", "action_type"),
+    )
 
-    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), primary_key=True)
-    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"), index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    player_id: Mapped[int | None] = mapped_column(ForeignKey("players.id"))
     match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
 
     action_type: Mapped[DefensiveActionType] = enum_column(DefensiveActionType, index=True)
     duel_type: Mapped[DuelType | None] = enum_column(DuelType, nullable=True)
     duel_outcome: Mapped[DuelOutcome | None] = enum_column(DuelOutcome, nullable=True)
-    is_successful: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_successful: Mapped[bool | None] = mapped_column(Boolean, index=True)
     is_aerial: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     in_own_penalty_area: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -523,6 +594,7 @@ class GoalkeeperAction(Base):
     conceded_goal: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     gave_rebound: Mapped[bool] = mapped_column(Boolean, default=False)
     is_sweeper: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_shootout: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
     # Atributos do chute enfrentado, copiados do evento de finalização correspondente.
     # Sustentam "defesas de fora da área" e "gols evitados" (soma de xG menos gols sofridos).
@@ -536,7 +608,11 @@ class GoalkeeperAction(Base):
 
 
 class DisciplinaryAction(Base):
-    """Falta cometida, falta sofrida e cartão."""
+    """Falta cometida, falta sofrida e cartão.
+
+    Os recortes de campo são nulos quando o evento não tem localização — cartão por
+    reclamação, por exemplo, é registrado sem coordenada.
+    """
 
     __tablename__ = "disciplinary_actions"
 
@@ -547,26 +623,28 @@ class DisciplinaryAction(Base):
     is_foul_committed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_foul_won: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     card: Mapped[CardType | None] = enum_column(CardType, nullable=True, index=True)
+    foul_type: Mapped[str | None] = mapped_column(String(32))
 
     # Recortes pedidos: cartão no campo de ataque x de defesa, falta perto da própria área.
-    in_own_half: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    near_own_penalty_area: Mapped[bool] = mapped_column(Boolean, default=False)
+    in_own_half: Mapped[bool | None] = mapped_column(Boolean, index=True)
+    near_own_penalty_area: Mapped[bool | None] = mapped_column(Boolean)
     conceded_penalty: Mapped[bool] = mapped_column(Boolean, default=False)
+    won_penalty: Mapped[bool] = mapped_column(Boolean, default=False)
 
     event: Mapped[Event] = relationship(foreign_keys=[event_id])
 
 
 # =========================================================================================
-# Dados de fonte externa (CSV do clube, planilha manual)
+# Dados de fonte externa (CSV do clube, planilha manual, fontes biográficas)
 # =========================================================================================
 
 
 class Injury(Base):
     """Lesão do atleta.
 
-    Nenhum provedor aberto de eventos registra lesão; a alimentação é por CSV. A tabela
-    existe desde já para que o histórico de disponibilidade possa ser cruzado com a
-    minutagem sem alteração de schema depois.
+    Nenhum provedor aberto de eventos registra lesão; a alimentação vem de outra fonte.
+    A tabela existe desde já para que o histórico de disponibilidade possa ser cruzado
+    com a minutagem sem alteração de schema depois.
     """
 
     __tablename__ = "injuries"
@@ -614,8 +692,8 @@ class IngestionRun(Base, TimestampMixin):
     """Registro de cada execução de ingestão.
 
     Num TCC é preciso responder "de onde veio este número e quando foi carregado".
-    Esta tabela é a resposta, e também permite retomar uma carga interrompida sem
-    reprocessar partidas já concluídas.
+    Esta tabela é a resposta. `warnings` guarda o que a carga não conseguiu reconciliar:
+    placar que não bate com os eventos, valores da fonte fora do vocabulário.
     """
 
     __tablename__ = "ingestion_runs"
@@ -627,4 +705,5 @@ class IngestionRun(Base, TimestampMixin):
     matches_ingested: Mapped[int] = mapped_column(Integer, default=0)
     events_ingested: Mapped[int] = mapped_column(Integer, default=0)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    warnings: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
