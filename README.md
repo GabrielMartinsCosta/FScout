@@ -43,14 +43,25 @@ banco, sem Docker.
 
 ## Instalação
 
-```bash
+```powershell
+git clone https://github.com/GabrielMartinsCosta/FScout
+cd FScout
+
 python -m venv .venv
-.venv\Scripts\activate          # Windows
+.venv\Scripts\Activate.ps1      # PowerShell
+# .venv\Scripts\activate.bat    # cmd
 # source .venv/bin/activate     # Linux e macOS
 
 pip install -e ".[dev]"
-cp .env.example .env
 ```
+
+O arquivo `.env` é opcional: `config.py` traz padrão para toda configuração, e o banco
+é criado em `data/db/fscout.db`. Copie de `.env.example` só se precisar alterar algo
+(apontar para Postgres, mudar o diretório de cache).
+
+Nada que o repositório não traz precisa ser transportado entre máquinas: o ambiente
+virtual é recriado pelo comando acima, e os dados brutos são recarregados da fonte pela
+ingestão.
 
 ## Uso
 
