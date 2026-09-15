@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>FScout — Proposta de TCC</title>
+<style>
+  @page { size: A4; margin: 1.5cm 1.8cm; }
+  :root { --tinta: #16181d; --suave: #5b6270; --linha: #d8dce3; --destaque: #0f4c81; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--tinta); background: #fff;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10pt; line-height: 1.42;
+  }
+  header { border-bottom: 2px solid var(--destaque); padding-bottom: 8px; margin-bottom: 14px; }
+  .rotulo { font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; color: var(--destaque); font-weight: 600; }
+  h1 { font-size: 17pt; margin: 6px 0 4px; line-height: 1.25; }
+  .subtitulo { color: var(--suave); font-size: 10.5pt; margin: 0; }
+  .autoria { margin-top: 10px; font-size: 9.5pt; color: var(--suave); }
+  h2 {
+    font-size: 10.5pt; margin: 11px 0 4px; padding-bottom: 3px;
+    border-bottom: 1px solid var(--linha); color: var(--destaque);
+  }
+  p { margin: 0 0 6px; text-align: justify; }
+  ul { margin: 0 0 8px; padding-left: 18px; }
+  li { margin-bottom: 3px; }
+  strong { font-weight: 600; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
+  table { width: 100%; border-collapse: collapse; margin: 5px 0 8px; font-size: 9.5pt; }
+  th, td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+  th { color: var(--suave); font-weight: 600; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .04em; }
+  td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .caixa { background: #f5f7fa; border-left: 3px solid var(--destaque); padding: 9px 12px; margin: 10px 0; }
+  .caixa p:last-child { margin-bottom: 0; }
+  .duas { display: flex; gap: 22px; }
+  .duas > div { flex: 1; }
+  footer { margin-top: 12px; padding-top: 6px; border-top: 1px solid var(--linha); font-size: 8.5pt; color: var(--suave); }
+  .quebra { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="rotulo">Proposta de Trabalho de Conclusão de Curso</div>
+  <h1>FScout: análise granular de desempenho de atletas de futebol a partir de dados evento a evento</h1>
+  <p class="subtitulo">Uma ferramenta de scouting que trata estatística derivada como consulta, e não como coluna.</p>
+  <p class="autoria">Gabriel Martins &nbsp;·&nbsp; setembro de 2026 &nbsp;·&nbsp; protótipo funcional já implementado</p>
+</header>
+
+<h2>1. Tema e problema</h2>
+<p>
+  Ferramentas públicas de estatística de futebol entregam números agregados — total de gols, de
+  passes, percentual de acerto —, granularidade que não sustenta uma pergunta de scouting real,
+  normalmente condicional e combinada: <em>quantos gols o atleta marcou de perna esquerda, de fora
+  da área, em jogadas iniciadas em escanteio, num recorte de datas e contra certo adversário</em>.
+  A saída direta, criar uma coluna por estatística, falha por três razões: a lista de combinações
+  é praticamente ilimitada; cada pergunta nova exige alterar o banco e reprocessar tudo; e o
+  número resultante não é auditável.
+</p>
+
+<h2>2. Proposta</h2>
+<div class="caixa">
+  <p>
+    <strong>Hipótese de projeto:</strong> armazenando <em>o que aconteceu em campo</em> — uma linha
+    por ação, com seus qualificadores e coordenadas — e calculando <em>o que se quer saber</em> no
+    momento da pergunta, uma única base responde tanto às estatísticas previstas quanto às não
+    previstas, de forma rastreável.
+  </p>
+</div>
+<p>
+  O sistema é construído sobre um <strong>modelo de eventos</strong> e um <strong>catálogo
+  declarativo de métricas</strong>. Cada métrica é uma especificação (filtro, agregação, unidade,
+  posições a que se aplica), não um trecho de código isolado. Acrescentar uma estatística é
+  acrescentar uma especificação; e o catálogo, exportado, é a própria tabela de definições
+  operacionais da metodologia.
+</p>
+
+<h2>3. Fontes de dados e integração</h2>
+<p>
+  Nenhuma fonte aberta atende sozinha ao escopo, o que torna a <strong>integração de fontes</strong>
+  parte do problema de pesquisa, e não um detalhe de engenharia.
+</p>
+<table>
+  <tr><th>Fonte</th><th>O que fornece</th><th>Licença / acesso</th></tr>
+  <tr><td>StatsBomb Open Data</td><td>Eventos com coordenada, parte do corpo, técnica e xG</td><td>Aberta, uso acadêmico</td></tr>
+  <tr><td>transfermarkt-datasets</td><td>Nascimento, altura, pé, valor de mercado, contrato</td><td>CC0</td></tr>
+  <tr><td>Open-Meteo (ERA5)</td><td>Clima no horário de cada partida</td><td>CC BY 4.0</td></tr>
+  <tr><td>OpenStreetMap / Wikidata</td><td>Coordenadas dos estádios</td><td>ODbL / CC0</td></tr>
+</table>
+<p>
+  As fontes não compartilham identificadores. A ligação é feita em três níveis, do sinal mais forte
+  ao mais fraco — escalação da partida com número de camisa, nome dentro do país, nome idêntico e
+  único —, e cada nível <strong>pode recusar</strong> em vez de arriscar. Cada ligação registra o
+  método e a confiança, de modo que todo número exibido é rastreável até a origem.
+</p>
+
+<h2>4. Estrutura do sistema</h2>
+<div class="duas">
+  <div>
+    <table>
+      <tr><th>Camada</th><th>Papel</th></tr>
+      <tr><td>domínio</td><td>Vocabulário e geometria do campo</td></tr>
+      <tr><td>ingestão</td><td>Um adaptador por fonte</td></tr>
+      <tr><td>ligação</td><td>Identidade entre fontes</td></tr>
+      <tr><td>métricas</td><td>Catálogo e motor de avaliação</td></tr>
+      <tr><td>API</td><td>Contrato HTTP</td></tr>
+      <tr><td>visualização</td><td>Painel interativo</td></tr>
+    </table>
+  </div>
+  <div>
+    <p>
+      Python 3.13, SQLAlchemy sobre SQLite (schema portável para PostgreSQL), FastAPI e
+      Dash/Plotly. A dependência entre camadas aponta em uma só direção, e a camada de domínio não
+      depende de banco nem de rede, o que a torna verificável isoladamente.
+    </p>
+    <p>
+      Qualidade de código verificada de forma automatizada: 160 testes, análise estática e
+      formatação padronizada.
+    </p>
+  </div>
+</div>
+
+<h2>5. Estado atual: protótipo já em funcionamento</h2>
+<p>
+  Fundação, ingestão e integração de fontes estão <strong>concluídas e validadas</strong>:
+</p>
+<table>
+  <tr><th>Item</th><th>Situação</th></tr>
+  <tr><td>Competições carregadas</td><td class="num">Copa do Mundo 2022, Eurocopa 2024, Copa América 2024, La Liga 2020/21</td></tr>
+  <tr><td>Volume</td><td class="num">182 partidas, 662 mil eventos, 1.583 atletas</td></tr>
+  <tr><td>Ficha biográfica ligada</td><td class="num">96,8% dos atletas</td></tr>
+  <tr><td>Clima por partida</td><td class="num">182 de 182</td></tr>
+</table>
+
+<h2>6. Validação</h2>
+<p>A correção é verificada contra fatos independentes, e não contra a própria implementação:</p>
+<ul>
+  <li><strong>Reconstrução do placar.</strong> Os gols recontados a partir dos eventos conferem com o placar oficial em 182 de 182 partidas.</li>
+  <li><strong>Fatos públicos.</strong> Artilharia e liderança de assistências das competições coincidem com os registros oficiais.</li>
+  <li><strong>Ligação entre fontes.</strong> O método por nome é avaliado contra as ligações obtidas por escalação, que funcionam como gabarito: <strong>98,6% de precisão</strong>. Os casos não resolvidos vão para revisão manual, com o motivo da recusa.</li>
+  <li><strong>Consistência interna.</strong> A minutagem por equipe e partida fica a menos de 3% do esperado para onze atletas em campo.</li>
+</ul>
+<p>
+  A validação já revelou defeitos que testes sintéticos não pegariam: escalações com intervalos
+  sobrepostos na fonte, que inflavam minutagem, e um estádio geocodificado no estado errado.
+</p>
+
+<h2>7. Limitações declaradas</h2>
+<ul>
+  <li>Distância percorrida, sprints e velocidade exigem <em>tracking data</em>, inexistente em fonte aberta para essas competições.</li>
+  <li>A StatsBomb Open Data não cobre o Campeonato Brasileiro; atletas brasileiros aparecem pela seleção na Copa América 2024.</li>
+  <li>A reanálise meteorológica tem grade de cerca de 25 km e suaviza chuva convectiva.</li>
+</ul>
+
+<h2>8. Cronograma e situação</h2>
+<table>
+  <tr><th>Etapa</th><th>Situação</th></tr>
+  <tr><td>Modelo de eventos, ingestão e integração de fontes</td><td>Concluída</td></tr>
+  <tr><td>Motor declarativo de métricas</td><td>Em andamento</td></tr>
+  <tr><td>API e painel interativo (perfil, comparação, mapas de campo)</td><td>Planejada</td></tr>
+  <tr><td>Consolidação, redação e defesa</td><td>Planejada</td></tr>
+</table>
+
+<div class="caixa">
+  <p>
+    <strong>O que eu gostaria de discutir com o orientador:</strong> o recorte final do escopo
+    analítico, o desenho da avaliação — em especial como medir a qualidade da integração entre
+    fontes — e a estrutura do texto do TCC.
+  </p>
+</div>
+
+<footer>
+  Código, documentação de arquitetura e decisões de projeto: <code>github.com/GabrielMartinsCosta/FScout</code>
+</footer>
+
+</body>
+</html>
