@@ -24,6 +24,7 @@ from fscout.domain.enums import (
     GoalkeeperActionType,
     GoalkeeperOutcome,
     GoalkeeperTechnique,
+    HomeAway,
     PassHeight,
     PassOutcome,
     PassTechnique,
@@ -33,7 +34,6 @@ from fscout.domain.enums import (
     ShotOutcome,
     ShotTechnique,
     ShotType,
-    Venue,
 )
 from fscout.domain.pitch import (
     GOAL_CROSSBAR_Z,
@@ -246,7 +246,7 @@ def build_match_bundle(
             if is_home
             else (match.get("away_score"), match.get("home_score"))
         )
-        venue = Venue.NEUTRAL if neutral else (Venue.HOME if is_home else Venue.AWAY)
+        home_away = HomeAway.NEUTRAL if neutral else (HomeAway.HOME if is_home else HomeAway.AWAY)
 
         for lineup_player in team["lineup"]:
             player = player_row(lineup_player)
@@ -257,7 +257,7 @@ def build_match_bundle(
             appearance.update(
                 team_ref=team_ref,
                 opponent_team_ref=away_ref if is_home else home_ref,
-                venue=venue,
+                home_away=home_away,
                 goals_for=goals_for,
                 goals_against=goals_against,
             )
@@ -327,6 +327,7 @@ def match_row(match: Mapping[str, Any], neutral: bool) -> Row:
         "away_score": match.get("away_score"),
         "stage": _name(match.get("competition_stage")),
         "stadium": _name(match.get("stadium")),
+        "venue_country": _name((match.get("stadium") or {}).get("country")),
         "referee": _name(match.get("referee")),
         "is_neutral_venue": neutral,
     }

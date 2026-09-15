@@ -24,7 +24,6 @@ from fscout.db.base import Base
 from fscout.db.models import (
     Appearance,
     Competition,
-    Country,
     DefensiveAction,
     DisciplinaryAction,
     Dribble,
@@ -42,6 +41,8 @@ from fscout.db.models import (
 )
 from fscout.domain.enums import PositionGroup
 from fscout.ingestion.bundle import MatchBundle, Row
+from fscout.linking.countries import CountryResolver
+from fscout.linking.venues import VenueResolver
 
 MATCHED_BY_CREATED = "created"
 DERIVED_SOURCE = "derived"
@@ -68,7 +69,8 @@ class Loader:
         self._session = session
         self._source = source
         self._entity_ids: dict[tuple[str, str], int] = {}
-        self._country_ids: dict[str, int] = {}
+        self._countries = CountryResolver(session)
+        self._venues = VenueResolver(session, self._countries)
         self._nationalities: set[tuple[int, int]] = set()
 
     # ------------------------------------------------------------------------------------
@@ -133,17 +135,8 @@ class Loader:
         return found
 
     def country_id(self, name: str | None) -> int | None:
-        if not name:
-            return None
-        if name not in self._country_ids:
-            country_id = self._session.scalar(select(Country.id).where(Country.name == name))
-            if country_id is None:
-                country = Country(name=name)
-                self._session.add(country)
-                self._session.flush()
-                country_id = country.id
-            self._country_ids[name] = country_id
-        return self._country_ids[name]
+        """Id canônico do país, unificando grafias de fontes diferentes."""
+        return self._countries.resolve(name)
 
     # ------------------------------------------------------------------------------------
     # Dimensões de competição
@@ -179,10 +172,13 @@ class Loader:
         match_attributes = {
             key: value
             for key, value in bundle.match.items()
-            if key not in ("season_ref", "home_team_ref", "away_team_ref")
+            if key not in ("season_ref", "home_team_ref", "away_team_ref", "venue_country")
         }
         match_attributes.update(
             season_id=season_id,
+            venue_id=self._venues.resolve(
+                bundle.match.get("stadium"), bundle.match.get("venue_country")
+            ),
             home_team_id=team_ids[bundle.match["home_team_ref"]],
             away_team_id=team_ids[bundle.match["away_team_ref"]],
         )

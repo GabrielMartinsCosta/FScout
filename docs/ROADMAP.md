@@ -55,20 +55,46 @@ pegariam: a escalação da StatsBomb tem intervalos invertidos e sobrepostos, e 
 207 minutos na final. A correção está documentada em `clock.py` e coberta por testes que
 reproduzem os casos reais.
 
-## Fase 1b — Ficha do atleta e fontes complementares · Semanas 2 e 3
+## Fase 1b — Ficha do atleta e clima · Semana 1 — **concluída**
 
-Detalhes e justificativas em [`FONTES.md`](FONTES.md).
+Justificativas e limites de cada fonte em [`FONTES.md`](FONTES.md).
 
-- Adaptador transfermarkt-datasets: data de nascimento, altura, pé, dupla nacionalidade,
-  valor de mercado, fim de contrato, transferências
-- Ligação de registros entre StatsBomb e Transfermarkt por nome, nacionalidade e equipe na
-  mesma temporada, com fila de revisão manual
-- Validação da ligação: precisão numa amostra conferida à mão e cobertura
-- Open-Meteo: clima de cada partida a partir da coordenada do estádio
-- Carga das competições-alvo: Copa do Mundo 2022, Euro 2024, La Liga 2020/21
+- [x] Adaptador transfermarkt-datasets: nascimento, altura, pé, país de nascimento, valor de
+      mercado e fim de contrato
+- [x] Ligação de registros em três níveis (escalação, nome e nacionalidade, nome único),
+      com fila de revisão manual
+- [x] Precisão do método por nome medida contra as ligações por escalação
+- [x] Estádio como entidade própria, geocodificado pelo OpenStreetMap, com correção manual
+- [x] Open-Meteo: clima de cada partida no horário do jogo
+- [x] Carga das competições-alvo: Copa do Mundo 2022, Euro 2024, La Liga 2020/21
+- [ ] Histórico de clubes a partir das transferências (adiado: depende de ligar também os
+      clubes do Transfermarkt, e não só as seleções)
 
-**Pronto quando:** os atletas da Copa América 2024 têm idade e altura preenchidas, e a
-precisão da ligação está medida e documentada.
+| Etapa | Resultado |
+|---|---|
+| Partidas ligadas | 182 de 182 |
+| Equipes ligadas | 71 |
+| Atletas ligados | **1.532 de 1.583 (96,8%)** |
+| — por escalação da partida | 703 |
+| — por nome e nacionalidade | 827 |
+| — por nome único no dataset | 2 |
+| Precisão do método por nome | **98,6%** (633 de 642) |
+| Cobertura do método por nome | 90,0% |
+| Casos para revisão manual | 51 (3,2%) |
+| Biografia preenchida | 1.511 datas de nascimento, 1.512 alturas e pés preferenciais |
+| Valor de mercado | 41.781 registros de valorização, 1.239 fins de contrato |
+| Clima | 182 de 182 partidas, 51 estádios localizados (7 por coordenada manual) |
+
+Três defeitos que só a validação contra dados reais revelaria:
+
+- A regra de folga do método por nome rejeitava **acertos exatos**: "Alessandro Bastoni"
+  perdia para "Alessandro Bastrini", que é outra pessoa com letras parecidas. Daí o nível de
+  nome idêntico.
+- O geocodificador devolveu o **Q2 Stadium na Virgínia** em vez de no Texas, porque a busca
+  por nome encontra bairros chamados "Stadium". A coordenada foi corrigida à mão, e a
+  correção passou a descartar o clima já gravado.
+- O enum de mando de campo se chamava `Venue`, o mesmo nome da nova tabela de estádios, e
+  derrubou o mapeamento inteiro. Virou `HomeAway`.
 
 ## Fase 2 — Motor de métricas · Semanas 4 e 5
 
@@ -132,8 +158,8 @@ Deixada vazia de propósito. Ela vai ser usada.
 |---|---|---|
 | Distância percorrida, sprints, velocidade | Exige *tracking data*, que não existe para as competições com eventos | Demonstrável só em amostra aberta (Metrica, SkillCorner) — opcional |
 | Velocidade de chute | Não registrada por nenhuma fonte acessível | Impossível |
-| Desempenho por condição climática | Open-Meteo entrega o clima histórico por coordenada e hora | **Reincluído** na Fase 1b |
-| Salário e contrato | O Transfermarkt traz fim de contrato; salário não tem fonte aberta confiável | Contrato reincluído na Fase 1b; salário segue fora |
+| Desempenho por condição climática | Open-Meteo entrega o clima histórico por coordenada e hora | **Concluído** na Fase 1b |
+| Salário e contrato | O Transfermarkt traz fim de contrato; salário não tem fonte aberta confiável | Contrato **concluído** na Fase 1b; salário segue fora |
 | Equipe como entidade analítica | Dobra o escopo do motor de métricas | Fase 2 do projeto, pós-TCC |
 | Modelo de xG próprio | Usar o `xg` da fonte; treinar um modelo é um TCC inteiro | Trabalho futuro |
 | Raspagem de FBref, SofaScore, FotMob | APIs não oficiais, termos de uso restritivos, quebram sem aviso | Descartada; substituída por fontes com licença ou API oficial |
@@ -160,6 +186,6 @@ faltante — é assim que se apresenta numa defesa.
 
 ## Próximo passo imediato
 
-Fase 1b, começando pelo Transfermarkt: é o que preenche a ficha básica do atleta, que a
-especificação trata como fundamental, e é onde a ligação entre fontes é construída e
-medida.
+Fase 2, o motor de métricas: o `Slice` de recortes, o catálogo declarativo de `MetricSpec` e
+a normalização por 90 minutos. É a contribuição central do trabalho, e agora ela tem sobre o
+que rodar: 662 mil eventos de 182 partidas, com ficha, valor de mercado e clima ligados.

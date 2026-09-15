@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -13,13 +12,10 @@ from typing import Any
 
 import httpx
 
-from fscout.config import PROJECT_ROOT, Settings, get_settings
+from fscout.config import Settings, get_settings
+from fscout.ingestion.download import download_to_cache
 
 logger = logging.getLogger(__name__)
-
-
-class SourceUnavailableError(RuntimeError):
-    """A fonte não respondeu depois de todas as tentativas."""
 
 
 class StatsBombClient:
@@ -44,10 +40,7 @@ class StatsBombClient:
     ) -> None:
         self._settings = settings or get_settings()
         self._base_url = self._settings.statsbomb_base_url.rstrip("/")
-        raw_dir = Path(self._settings.raw_dir)
-        if not raw_dir.is_absolute():
-            raw_dir = PROJECT_ROOT / raw_dir
-        self._cache_dir = raw_dir / "statsbomb"
+        self._cache_dir = self._settings.resolved_raw_dir / "statsbomb"
         self._owns_http = http is None
         self._http = http or httpx.Client(
             timeout=self._settings.http_timeout_seconds, follow_redirects=True
@@ -119,33 +112,9 @@ class StatsBombClient:
             return json.load(handle)
 
     def _download(self, relative: str) -> None:
-        url = f"{self._base_url}/{relative}"
-        attempts = self._settings.http_max_retries
-        last_error: Exception | None = None
-
-        for attempt in range(1, attempts + 1):
-            try:
-                response = self._http.get(url)
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 404:
-                    raise FileNotFoundError(f"Recurso inexistente na StatsBomb: {url}") from exc
-                last_error = exc
-            except httpx.TransportError as exc:
-                last_error = exc
-            else:
-                self._write_atomically(self._cache_path(relative), response.content)
-                return
-
-            if attempt < attempts:
-                time.sleep(2 ** (attempt - 1))
-
-        raise SourceUnavailableError(f"Falha ao baixar {url}: {last_error}") from last_error
-
-    @staticmethod
-    def _write_atomically(path: Path, content: bytes) -> None:
-        """Grava em arquivo temporário e renomeia: download interrompido nunca vira cache."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        partial = path.with_suffix(path.suffix + ".part")
-        partial.write_bytes(content)
-        partial.replace(path)
+        download_to_cache(
+            self._http,
+            f"{self._base_url}/{relative}",
+            self._cache_path(relative),
+            attempts=self._settings.http_max_retries,
+        )

@@ -80,6 +80,8 @@ ganho é que trocar Dash por React mais adiante não toca em nada abaixo de `api
 | `player_club_spells` | Histórico de clubes, com vigência e marcação de empréstimo. |
 | `matches` | Partida. |
 | `appearances` | Participação do atleta na partida: minutagem, posição, mando. |
+| `venues` | Estádio, com coordenada geocodificada e a proveniência dela. |
+| `match_weather` | Clima durante a partida, derivado da coordenada do estádio. |
 
 ### Fato — `events`
 
@@ -124,7 +126,7 @@ A estratégia de ligação entre fontes está em [`FONTES.md`](FONTES.md).
 
 Duas, ambas de valores derivados na ingestão e nunca editados depois:
 
-- **`appearances.opponent_team_id` e `appearances.venue`.** Sem elas, "estatísticas contra o
+- **`appearances.opponent_team_id` e `appearances.home_away`.** Sem elas, "estatísticas contra o
   time X" e "desempenho fora de casa" exigiriam dois JOINs em `matches` com `CASE` para
   descobrir de que lado o jogador estava — em toda consulta do sistema. Com elas, viram um
   `WHERE` indexado.
@@ -231,7 +233,7 @@ class Slice:
     date_to: date | None = None
     opponent_team_ids: tuple[int, ...] = ()
     team_ids: tuple[int, ...] = ()
-    venue: Venue | None = None
+    home_away: HomeAway | None = None
     min_minutes: int | None = None
 ```
 
@@ -321,6 +323,21 @@ Um TCC ganha credibilidade ao delimitar o que *não* faz. Estas são as fronteir
   105 × 68 m. O erro é sistemático e igual para todos os atletas, de modo que comparações
   não são afetadas — apenas valores absolutos.
 
+- **Ligação entre fontes incompleta por construção.** 51 dos 1.583 atletas (3,2%) ficam
+  sem ficha biográfica porque as regras preferem não ligar a errar: sobrenome composto
+  espanhol, apelido comum ("Fabinho" tem oito registros no Transfermarkt) e apelido contra
+  nome de registro ("Sávio" x "Savinho"). Os casos ficam num CSV de revisão manual.
+- **Dataset do Transfermarkt congelado.** A atualização automática está pausada desde julho
+  de 2026; valor de mercado e contrato refletem essa data.
+- **Horário de início.** É UTC, conferido contra horários oficiais de três competições, mas
+  a própria final de 2022 está duas horas adiantada na fonte. O clima daquela partida sai
+  deslocado.
+- **Resolução do clima.** A reanálise ERA5 tem grade de ~25 km e suaviza chuva convectiva:
+  a tempestade que interrompeu Alemanha x Dinamarca na Euro 2024 aparece como 0,4 mm.
+- **Geocodificação de estádios.** A busca por nome pode devolver um lugar plausível e
+  errado (o Q2 Stadium caiu na Virgínia em vez do Texas). Resultados não marcados como
+  estádio são sinalizados no relatório e corrigidos em `data/reference/venues.csv`.
+
 **Convenções adotadas que precisam ser declaradas:**
 
 - **Minutagem nominal** (jogo inteiro vale 90, prorrogação 120) como base da normalização
@@ -354,6 +371,11 @@ modelo de xG próprio, segunda fonte de eventos (Wyscout).
 | 13 | União de intervalos cortada na substituição | A escalação da fonte tem intervalos invertidos e sobrepostos | Somar intervalos |
 | 14 | Disputa de pênaltis marcada, não descartada | A cobrança é dado útil; gol de disputa não é gol do atleta | Excluir o período 5 |
 | 15 | Chave de temporada `competição-temporada` | O `season_id` da StatsBomb se repete entre competições | Usar o id da fonte |
+| 16 | Ligação em três níveis, com recusa explícita | Preferir não ligar a ligar errado; a precisão é medida | Ligar sempre o nome mais parecido |
+| 17 | Precisão medida contra as ligações por escalação | Dá um gabarito real, sem anotação manual | Apenas inspeção visual |
+| 18 | Estádio como entidade, com coordenada | Uma geocodificação por estádio, não por partida | Latitude e longitude na partida |
+| 19 | Correção manual descarta o clima gravado | Sem isso a correção não teria efeito | Corrigir só a coordenada |
+| 20 | Clima pedido em UTC | Evita converter fuso e horário de verão no meio da temporada | Pedir no fuso local |
 
 ---
 
@@ -363,24 +385,29 @@ modelo de xG próprio, segunda fonte de eventos (Wyscout).
 FScout/
 ├── src/fscout/
 │   ├── config.py              Configuração via variáveis de ambiente
-│   ├── cli.py                 Comandos: competitions, ingest, status, init-db
+│   ├── cli.py                 competitions, ingest, transfermarkt, weather, status
 │   ├── domain/                Vocabulário e geometria. Sem I/O.
 │   │   ├── enums.py           Enums do futebol, tolerantes a valor desconhecido
 │   │   └── pitch.py           Zonas, distâncias, ângulos, progressão
 │   ├── db/
 │   │   ├── base.py            Base declarativa e mixins
-│   │   ├── models.py          Schema
+│   │   ├── models.py          Schema (22 tabelas)
 │   │   └── session.py         Engine, sessão, PRAGMAs do SQLite
+│   ├── linking/               Decidir quando dois registros são a mesma entidade
+│   │   ├── names.py           Normalização e comparação de nomes
+│   │   ├── countries.py       Identidade de países entre fontes
+│   │   ├── venues.py          Identidade de estádios
+│   │   └── matching.py        Regras de ligação: partidas, atletas, votação
 │   ├── ingestion/
 │   │   ├── bundle.py          Contrato entre adaptadores e carga (MatchBundle)
+│   │   ├── download.py        Download com cache e novas tentativas
 │   │   ├── loader.py          Gravação idempotente e resolução de identidade
-│   │   ├── pipeline.py        Orquestração, auditoria em ingestion_runs
-│   │   └── statsbomb/
-│   │       ├── client.py      Download com cache em disco
-│   │       ├── vocab.py       Tabelas de tradução do vocabulário
-│   │       ├── clock.py       Relógio da partida e minutagem
-│   │       ├── chains.py      Pré-assistência e consequências do drible
-│   │       └── mapper.py      JSON da fonte para linhas do schema
+│   │   ├── pipeline.py        Orquestração da ingestão de eventos
+│   │   ├── geocoding.py       Nominatim (OpenStreetMap)
+│   │   ├── openmeteo.py       Clima histórico por coordenada e hora
+│   │   ├── weather.py         Localiza estádios e grava o clima das partidas
+│   │   ├── statsbomb/         Cliente, vocabulário, relógio, encadeamentos, mapeador
+│   │   └── transfermarkt/     Cliente, ligador, enriquecimento, orquestração
 │   ├── metrics/               Catálogo e motor de métricas (Fase 2)
 │   ├── api/                   FastAPI (Fase 3)
 │   └── viz/                   Dash (Fase 4)
@@ -389,5 +416,9 @@ FScout/
 │   ├── ARQUITETURA.md
 │   ├── FONTES.md
 │   └── ROADMAP.md
-└── data/                      raw (cache) / processed / db
+└── data/
+    ├── raw/                   Cache das fontes (fora do git)
+    ├── reference/             Coordenadas corrigidas à mão (versionado)
+    ├── processed/             Relatórios, como a fila de revisão manual
+    └── db/                    Banco SQLite (fora do git)
 ```

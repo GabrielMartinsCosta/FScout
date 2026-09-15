@@ -21,11 +21,11 @@ cada fonte.
 | Histórico de partidas, recortes por competição e data | StatsBomb Open Data | **Integrada** |
 | Duelos contra adversário específico, casa/fora | StatsBomb Open Data | **Integrada** |
 | Nome, nacionalidade | StatsBomb Open Data | **Integrada** |
-| Idade (data de nascimento), altura, pé preferencial | transfermarkt-datasets | Planejada |
-| Dupla nacionalidade (país de nascimento e de cidadania) | transfermarkt-datasets | Planejada |
-| Valor de mercado e sua evolução, fim de contrato | transfermarkt-datasets | Planejada |
+| Idade (data de nascimento), altura, pé preferencial | transfermarkt-datasets | **Integrada** |
+| Dupla nacionalidade (país de nascimento e de cidadania) | transfermarkt-datasets | **Integrada** |
+| Valor de mercado e sua evolução, fim de contrato | transfermarkt-datasets | **Integrada** |
 | Histórico de clubes com transferências e empréstimos | transfermarkt-datasets | Planejada |
-| Condição climática da partida | Open-Meteo (histórico) | Planejada |
+| Condição climática da partida | Open-Meteo (histórico) | **Integrada** |
 | Histórico de lesões | API-Football | Planejada |
 | Dados do Brasileirão | API-Football (agregado, sem eventos) | Planejada |
 | Distância percorrida, sprints, velocidade | Metrica Sports, SkillCorner (amostras) | Opcional |
@@ -54,7 +54,7 @@ cada fonte.
 - **Custo de integração:** alto. Exige um segundo mapeador de eventos, porque a taxonomia
   não coincide com a da StatsBomb. Só compensa se sobrar prazo.
 
-### transfermarkt-datasets — biografia e mercado · próxima a integrar
+### transfermarkt-datasets — biografia e mercado · integrada
 
 - **Formato:** CSV em 12 tabelas: competições, clubes, atletas, partidas, participações,
   valorizações, jogos por clube, eventos de partida, escalações, transferências, países e
@@ -80,7 +80,7 @@ cada fonte.
 - **Consequência de projeto:** com 100 requisições diárias, a ingestão tem de ser
   incremental e cachear tudo em disco, como o cliente da StatsBomb já faz.
 
-### Open-Meteo Historical Weather — clima · planejada
+### Open-Meteo Historical Weather — clima · integrada
 
 - **Dado:** reanálise meteorológica (ERA5) desde 1940, por coordenada e hora.
 - **Acesso:** sem chave de API; gratuito para uso não comercial até 10 mil chamadas por dia.
@@ -117,9 +117,11 @@ guarda, para cada entidade, o identificador em cada fonte e **como a ligação f
 | `matched_by` | Significado |
 |---|---|
 | `created` | A fonte criou o registro canônico |
-| `exact_id` | As fontes compartilham um identificador |
-| `name_birthdate` | Ligação inferida por nome e data de nascimento |
-| `name_team_season` | Ligação inferida por nome e clube na mesma temporada |
+| `date_teams` | Partida ligada por data e pelos nomes das duas equipes |
+| `match_side` | Equipe ligada pelo lado que ocupou nas partidas já ligadas |
+| `game_lineup` | Atleta ligado dentro da escalação de uma partida, por nome e camisa |
+| `name_nationality` | Atleta ligado por nome dentro do país |
+| `exact_name_unique` | Atleta ligado por nome idêntico e único no dataset inteiro |
 | `manual` | Revisada e confirmada manualmente |
 
 A coluna `confidence` quantifica ligações inferidas. Para qualquer número exibido é possível
@@ -128,16 +130,18 @@ responder de que fonte veio e por que dois registros foram considerados a mesma 
 ### O problema do atleta
 
 StatsBomb e Transfermarkt não compartilham identificador, e a StatsBomb não informa data de
-nascimento — então a chave mais óbvia não existe. A ligação usa três sinais:
+nascimento — a chave mais óbvia simplesmente não existe. Sobram três sinais:
 
-1. **Nome normalizado:** sem acento, minúsculo, comparado por tokens. "Lionel Andrés Messi
-   Cuccittini" e "Lionel Messi" compartilham os tokens relevantes.
-2. **Nacionalidade:** elimina homônimos de países diferentes.
-3. **Clube ou seleção na mesma temporada:** o sinal mais forte. Dois registros com nome
-   parecido que jogaram pela mesma equipe no mesmo ano são, na prática, a mesma pessoa.
+1. **Nome normalizado:** sem acento, minúsculo, comparado palavra a palavra. "Lionel Andrés
+   Messi Cuccittini" e "Lionel Messi" compartilham as palavras que importam.
+2. **Partida em comum:** se as duas fontes descrevem o mesmo jogo, o atleta está entre os
+   ~25 inscritos daquela equipe, e o número da camisa confirma. É o sinal mais forte.
+3. **Nacionalidade:** quando não há escalação, reduz o universo de 50 mil nomes para os
+   milhares de um país.
 
-A combinação vira uma pontuação. Acima de um limiar, liga automaticamente; numa faixa
-intermediária, vai para uma fila de revisão manual; abaixo, não liga.
+Os sinais não viram uma pontuação única: são aplicados em níveis, do mais forte ao mais
+fraco, e cada nível pode **recusar** em vez de arriscar. O que ninguém decide vai para um
+CSV de revisão manual, nunca para uma ligação duvidosa.
 
 ### Quem prevalece quando as fontes discordam
 
@@ -148,6 +152,27 @@ Isso já está implementado no carregador. Quando houver conflito real — duas 
 datas de nascimento diferentes —, a regra evolui para precedência por campo (data de
 nascimento do Transfermarkt, nome de exibição da StatsBomb).
 
+### Os três níveis de decisão, em ordem de evidência
+
+1. **Escalação da partida.** Entre os inscritos de uma equipe numa partida, nome parecido
+   mais número de camisa. É o nível mais forte e o único disponível para a Copa América
+   2024 e a La Liga — Copa do Mundo e Euro não têm escalação no Transfermarkt.
+2. **Nome e nacionalidade.** Nome idêntico e único dentro do país, ou nome aproximado com
+   folga sobre o segundo colocado. Homônimos exatos são desempatados por jogos de seleção.
+3. **Nome único no dataset inteiro.** Último recurso, para atletas que a fonte registra sem
+   cidadania nem país de nascimento.
+
+### Onde o método falha, e por que ele desiste
+
+Os 51 casos não ligados não são falhas silenciosas: são recusas deliberadas, registradas no
+CSV de revisão. Os padrões:
+
+- **Sobrenome composto espanhol.** "Daniel Olmo Carvajal" contém as palavras de "Daniel
+  Carvajal", outro atleta da mesma seleção, que pontua mais que o "Dani Olmo" correto.
+- **Apelido comum.** "Fabinho" tem oito registros no Transfermarkt, "Ederson" tem três.
+- **Apelido contra nome de registro.** O "Sávio" da seleção brasileira de 2024 é o "Savinho"
+  do Transfermarkt; o método por nome escolheria outro Sávio, e foi a escalação que acertou.
+
 ### Como validar — e transformar em resultado do TCC
 
 Sortear uma amostra de ligações automáticas, conferir manualmente e reportar **precisão**
@@ -156,12 +181,37 @@ ligados). É uma avaliação quantitativa simples e defensável da etapa de inte
 
 ---
 
+## 4b. Resultado medido da integração
+
+Sobre 182 partidas de quatro competições (Copa América 2024, Copa do Mundo 2022, Euro 2024
+e La Liga 2020/21):
+
+| Etapa | Resultado |
+|---|---|
+| Partidas ligadas | 182 de 182 |
+| Equipes ligadas | 71 |
+| Atletas ligados | **1.532 de 1.583 (96,8%)** |
+| — por escalação da partida | 703 |
+| — por nome e nacionalidade | 827 |
+| — por nome único no dataset | 2 |
+| Precisão do método por nome | **98,6%** (633 de 642) |
+| Cobertura do método por nome | 90,0% |
+| Casos para revisão manual | 51 (3,2%) |
+| Biografia preenchida | 1.511 datas de nascimento, 1.512 alturas e pés preferenciais |
+| Valor de mercado | 41.781 registros de valorização, 1.239 fins de contrato |
+| Clima | 182 de 182 partidas, 51 estádios localizados (7 por coordenada manual) |
+
+A precisão do método por nome é medida **contra as ligações por escalação**, que servem de
+gabarito: o método é aplicado como se aqueles atletas não estivessem ligados, e a resposta é
+comparada com a ligação conhecida.
+
+---
+
 ## 5. Ordem sugerida dentro do prazo
 
-1. **transfermarkt-datasets.** Preenche a ficha básica — nome, idade, altura, posição,
-   nacionalidade —, que a especificação trata como fundamental. É também onde a ligação de
-   registros é construída e validada.
-2. **Open-Meteo.** Barato: uma requisição por partida. Reinclui o recorte climático.
+1. ~~**transfermarkt-datasets.**~~ **Feito.** Ficha básica, valor de mercado e contrato.
+2. ~~**Open-Meteo.**~~ **Feito.** Uma requisição por estádio cobre todas as suas partidas.
+   Exigiu geocodificar os estádios, que nenhuma das fontes de partida traz.
 3. **API-Football.** Lesões e Brasileirão, respeitando a cota diária.
 4. **Tracking amostral.** Só se houver folga.
 5. **Wyscout.** Só se houver folga depois do item 4.
@@ -178,5 +228,7 @@ ligados). É uma avaliação quantitativa simples e defensável da etapa de inte
 - API-Football, planos: <https://www.api-football.com/pricing>
 - API-Football, endpoint de lesões: <https://www.api-football.com/news/post/new-endpoint-injuries>
 - Open-Meteo Historical Weather API: <https://open-meteo.com/en/docs/historical-weather-api>
+- Nominatim (OpenStreetMap), usado para geocodificar estádios: <https://nominatim.org/>
+- Wikidata, usada nas coordenadas que o Nominatim não resolve: <https://www.wikidata.org/>
 - Metrica Sports sample data: <https://github.com/metrica-sports/sample-data>
 - SkillCorner open data: <https://github.com/SkillCorner/opendata>

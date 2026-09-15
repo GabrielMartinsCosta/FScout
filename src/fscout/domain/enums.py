@@ -373,7 +373,12 @@ class PositionGroup(LenientStrEnum):
     UNKNOWN = "unknown"
 
 
-class Venue(LenientStrEnum):
+class HomeAway(LenientStrEnum):
+    """Mando de campo da equipe na partida.
+
+    Nao confundir com o local: o estadio e a entidade `venues` no schema.
+    """
+
     HOME = "home"
     AWAY = "away"
     NEUTRAL = "neutral"

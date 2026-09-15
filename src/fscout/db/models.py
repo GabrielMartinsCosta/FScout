@@ -35,6 +35,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -62,6 +63,7 @@ from fscout.domain.enums import (
     GoalkeeperActionType,
     GoalkeeperOutcome,
     GoalkeeperTechnique,
+    HomeAway,
     PassHeight,
     PassOutcome,
     PassTechnique,
@@ -71,7 +73,6 @@ from fscout.domain.enums import (
     ShotOutcome,
     ShotTechnique,
     ShotType,
-    Venue,
 )
 from fscout.domain.pitch import GoalMouthZone, Lane, VerticalThird
 
@@ -163,6 +164,8 @@ class Player(Base):
     birth_date: Mapped[date | None] = mapped_column(Date)
     height_cm: Mapped[int | None] = mapped_column(Integer)
     weight_kg: Mapped[int | None] = mapped_column(Integer)
+    # Nascer num país não é ter cidadania dele: fica separado de `nationalities`.
+    birth_country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id"))
     preferred_foot: Mapped[Foot | None] = enum_column(Foot, nullable=True)
     primary_position_group: Mapped[PositionGroup | None] = enum_column(
         PositionGroup, nullable=True, index=True
@@ -222,6 +225,47 @@ class PlayerClubSpell(Base):
     team: Mapped[Team] = relationship()
 
 
+class Venue(Base):
+    """Estádio.
+
+    Entidade própria, e não um texto na partida, porque a coordenada é obtida uma vez por
+    estádio e compartilhada por todas as partidas disputadas nele.
+    """
+
+    __tablename__ = "venues"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(192), unique=True)
+    name: Mapped[str] = mapped_column(String(128))
+    country_id: Mapped[int | None] = mapped_column(ForeignKey("countries.id"))
+    latitude: Mapped[float | None] = mapped_column(Float)
+    longitude: Mapped[float | None] = mapped_column(Float)
+
+    # Proveniência da coordenada: busca automática ou correção manual.
+    geocode_source: Mapped[str | None] = mapped_column(String(32))
+    geocode_query: Mapped[str | None] = mapped_column(String(256))
+    osm_type: Mapped[str | None] = mapped_column(String(16))
+    osm_id: Mapped[int | None] = mapped_column(BigInteger)
+    geocoded_as_stadium: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    country: Mapped[Country | None] = relationship()
+
+
+class MatchWeather(Base):
+    """Condição meteorológica durante a partida (definição em `fscout.ingestion.weather`)."""
+
+    __tablename__ = "match_weather"
+
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), primary_key=True)
+    venue_id: Mapped[int] = mapped_column(ForeignKey("venues.id"))
+    kickoff_utc: Mapped[datetime] = mapped_column(DateTime)
+    temperature_c: Mapped[float | None] = mapped_column(Float)
+    relative_humidity_pct: Mapped[float | None] = mapped_column(Float)
+    precipitation_mm: Mapped[float | None] = mapped_column(Float)
+    wind_speed_kmh: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(String(32))
+
+
 class Match(Base):
     """Partida."""
 
@@ -231,6 +275,8 @@ class Match(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     season_id: Mapped[int] = mapped_column(ForeignKey("seasons.id"))
     match_date: Mapped[date] = mapped_column(Date, index=True)
+    # Início em UTC: conferido contra horários oficiais de Copa do Mundo 2022, Copa América
+    # 2024 e Euro 2024. `match_date` também é a data em UTC.
     kickoff: Mapped[datetime | None] = mapped_column(DateTime)
     home_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
     away_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
@@ -238,6 +284,7 @@ class Match(Base):
     away_score: Mapped[int | None] = mapped_column(Integer)
     stage: Mapped[str | None] = mapped_column(String(64))
     stadium: Mapped[str | None] = mapped_column(String(128))
+    venue_id: Mapped[int | None] = mapped_column(ForeignKey("venues.id"), index=True)
     referee: Mapped[str | None] = mapped_column(String(96))
     attendance: Mapped[int | None] = mapped_column(Integer)
     is_neutral_venue: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -250,7 +297,7 @@ class Match(Base):
 class Appearance(Base):
     """Participação de um atleta numa partida.
 
-    `opponent_team_id` e `venue` são desnormalizados de propósito. Sem eles, "estatísticas
+    `opponent_team_id` e `home_away` são desnormalizados de propósito. Sem eles, "estatísticas
     contra o time X" e "desempenho fora de casa" exigiriam dois JOINs em `matches` com
     CASE para descobrir de que lado o jogador estava — em toda consulta do sistema.
     Com eles, viram um WHERE indexado. A duplicação é segura porque o valor é derivado
@@ -271,7 +318,7 @@ class Appearance(Base):
     player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
     opponent_team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
-    venue: Mapped[Venue] = enum_column(Venue, default=Venue.UNKNOWN, index=True)
+    home_away: Mapped[HomeAway] = enum_column(HomeAway, default=HomeAway.UNKNOWN, index=True)
 
     position: Mapped[str | None] = mapped_column(String(48))
     position_group: Mapped[PositionGroup | None] = enum_column(

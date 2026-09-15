@@ -234,3 +234,5 @@ scraping_logs/
 .playwright/
 # Ambiente virtual na raiz
 .venv/
+data/raw/**/*.gz
+data/raw/**/*.part

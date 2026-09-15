@@ -31,9 +31,9 @@ from fscout.db.models import (
     Shot,
 )
 from fscout.db.session import build_engine
-from fscout.domain.enums import ShotType, Venue
+from fscout.domain.enums import HomeAway, ShotType
+from fscout.ingestion.download import SourceUnavailableError
 from fscout.ingestion.pipeline import IngestionReport, ingest_season
-from fscout.ingestion.statsbomb.client import SourceUnavailableError
 
 pytestmark = pytest.mark.integration
 
@@ -88,8 +88,8 @@ def test_placar_e_campo_neutro(session: Session) -> None:
     match = session.scalars(select(Match)).one()
     assert (match.home_score, match.away_score) == (3, 3)
     assert match.is_neutral_venue
-    venues = set(session.scalars(select(Appearance.venue)))
-    assert venues == {Venue.NEUTRAL}
+    mandos = set(session.scalars(select(Appearance.home_away)))
+    assert mandos == {HomeAway.NEUTRAL}
 
 
 def test_gols_por_jogador(session: Session) -> None:

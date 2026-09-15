@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///data/db/fscout.db"
     statsbomb_base_url: str = "https://raw.githubusercontent.com/statsbomb/open-data/master/data"
+    transfermarkt_base_url: str = "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data"
     raw_dir: Path = PROJECT_ROOT / "data" / "raw"
     processed_dir: Path = PROJECT_ROOT / "data" / "processed"
     log_level: str = "INFO"
@@ -29,6 +30,12 @@ class Settings(BaseSettings):
     # Requisicoes HTTP da ingestao.
     http_timeout_seconds: float = 60.0
     http_max_retries: int = 3
+
+    @property
+    def resolved_raw_dir(self) -> Path:
+        """Diretório do cache bruto, absoluto mesmo quando configurado como relativo."""
+        raw_dir = Path(self.raw_dir)
+        return raw_dir if raw_dir.is_absolute() else PROJECT_ROOT / raw_dir
 
     @property
     def resolved_database_url(self) -> str:

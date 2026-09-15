@@ -25,15 +25,19 @@ Ver [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) para o raciocínio completo e
 
 ## Estado atual
 
-Fases 0 e 1 concluídas: domínio, schema e ingestão da StatsBomb, validada contra a Copa
-América 2024 inteira.
+Fases 0, 1 e 1b concluídas: domínio, schema, ingestão da StatsBomb, ligação com o
+Transfermarkt e clima por partida. No banco: 662 mil eventos de 182 partidas de quatro
+competições, com 96,8% dos atletas ligados à ficha biográfica.
 
 | Camada | Estado |
 |---|---|
 | `domain/` — vocabulário e geometria do campo | pronto |
-| `db/` — schema com 20 tabelas e identidade entre fontes | pronto |
+| `db/` — schema com 22 tabelas e identidade entre fontes | pronto |
 | `ingestion/` — StatsBomb | pronto, validado |
-| `ingestion/` — Transfermarkt, Open-Meteo, API-Football | próximo |
+| `ingestion/` — Transfermarkt (ficha, mercado) | pronto, validado |
+| `ingestion/` — Open-Meteo (clima por partida) | pronto, validado |
+| `linking/` — ligação de registros entre fontes | pronto, 96,8% |
+| `ingestion/` — API-Football (lesões, Brasileirão) | a fazer |
 | `metrics/` — catálogo e motor | a fazer |
 | `api/` — FastAPI | a fazer |
 | `viz/` — Dash e Plotly | a fazer |
@@ -76,6 +80,12 @@ fscout competitions "copa america"
 fscout ingest 223 282              # Copa América 2024
 fscout ingest 43 106 --limit 5     # só as 5 primeiras partidas da Copa de 2022
 fscout ingest 223 282 --refresh    # recarrega o que já está no banco
+
+# Liga os atletas ao Transfermarkt e preenche ficha, valor de mercado e contrato
+fscout transfermarkt
+
+# Localiza os estádios e busca o clima de cada partida no horário do jogo
+fscout weather
 
 # Quantidade de registros por tabela
 fscout status

@@ -17,6 +17,8 @@ from fscout.db import models
 from fscout.db.session import create_all, get_engine
 from fscout.ingestion.pipeline import ingest_season
 from fscout.ingestion.statsbomb.client import StatsBombClient
+from fscout.ingestion.transfermarkt.pipeline import enrich_from_transfermarkt
+from fscout.ingestion.weather import enrich_weather
 
 app = typer.Typer(
     help="FScout: scouting de atletas a partir de dados evento a evento.",
@@ -39,6 +41,8 @@ STATUS_TABLES = (
     models.GoalkeeperAction,
     models.DisciplinaryAction,
     models.ExternalId,
+    models.Venue,
+    models.MatchWeather,
 )
 
 
@@ -138,6 +142,77 @@ def ingest(
         console.print(f"[yellow]placar divergente[/yellow] {message}")
     for (field_name, value), count in report.unmapped_values.most_common(15):
         console.print(f"[yellow]não mapeado[/yellow] {field_name} = {value!r} ({count}x)")
+
+
+@app.command()
+def transfermarkt() -> None:
+    """Liga os atletas ao Transfermarkt e preenche biografia e valor de mercado."""
+    with console.status("Ligando StatsBomb e Transfermarkt (a primeira vez baixa ~190 MB)"):
+        report = enrich_from_transfermarkt()
+    link, bio = report.linking, report.enrichment
+
+    table = Table(title="Ligação StatsBomb x Transfermarkt", show_header=False)
+    table.add_row("Partidas ligadas", f"{link.matches_linked} de {link.matches_total}")
+    table.add_row("Equipes ligadas", str(link.teams_linked))
+    table.add_row(
+        "Atletas ligados",
+        f"{link.players_linked} de {link.players_total} "
+        f"({_percent(link.players_linked, link.players_total)})",
+    )
+    table.add_row("  por escalação da partida", str(link.players_by_lineup))
+    table.add_row("  por nome e nacionalidade", str(link.players_by_name))
+    table.add_row("  por nome único no dataset", str(link.players_by_exact_name))
+    table.add_row("Casos para revisão manual", str(len(link.review)))
+    if link.fallback_precision is not None and link.fallback_recall is not None:
+        table.add_row(
+            "Nome+nacionalidade: precisão",
+            f"{link.fallback_precision:.1%} ({link.fallback_agreed}/{link.fallback_proposed})",
+        )
+        table.add_row(
+            "Nome+nacionalidade: cobertura",
+            f"{link.fallback_recall:.1%} ({link.fallback_agreed}/{link.fallback_checked})",
+        )
+    console.print(table)
+
+    filled = Table(title="Biografia preenchida", show_header=False)
+    for label, value in (
+        ("Data de nascimento", bio.birth_date),
+        ("Altura", bio.height),
+        ("Pé preferencial", bio.foot),
+        ("País de nascimento", bio.birth_country),
+        ("Nacionalidades acrescentadas", bio.nationalities_added),
+        ("Registros de valor de mercado", bio.valuations),
+        ("Fins de contrato", bio.contracts),
+    ):
+        filled.add_row(label, f"{value:,}".replace(",", "."))
+    console.print(filled)
+    console.print(f"Casos para revisão: {report.review_path}")
+
+
+def _percent(part: int, whole: int) -> str:
+    return f"{part / whole:.1%}" if whole else "-"
+
+
+@app.command()
+def weather() -> None:
+    """Localiza os estádios e busca o clima de cada partida no horário do jogo."""
+    with console.status("Localizando estádios (1 consulta/s no OpenStreetMap) e buscando clima"):
+        report = enrich_weather()
+
+    table = Table(title="Clima das partidas", show_header=False)
+    table.add_row("Estádios localizados", f"{report.venues_located} de {report.venues_total}")
+    table.add_row("  por coordenada manual", str(report.venues_manual))
+    table.add_row("Partidas com clima", f"{report.matches_with_weather} de {report.matches_total}")
+    table.add_row("Partidas sem horário de início", str(report.matches_without_kickoff))
+    table.add_row("Partidas sem estádio localizado", str(report.matches_without_location))
+    table.add_row("Climas refeitos após correção", str(report.weather_discarded))
+    console.print(table)
+    for name in report.venues_unresolved:
+        console.print(
+            f"[yellow]não localizado[/yellow] {name}: informe em data/reference/venues.csv"
+        )
+    for name in report.venues_to_check:
+        console.print(f"[yellow]conferir[/yellow] {name}: resultado não marcado como estádio")
 
 
 @app.command()
