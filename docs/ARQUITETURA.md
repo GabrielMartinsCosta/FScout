@@ -1,0 +1,362 @@
+# Arquitetura do FScout
+
+## 1. O problema, e a decisão que o resolve
+
+A especificação inicial lista aproximadamente duzentas estatísticas: gols de canhota, gols
+de fora da área, gols vindos de escanteio, passes que entram na pequena área, defesas de
+chutes de fora da área, cartões no campo de ataque, e assim por diante.
+
+A leitura ingênua desse pedido produz uma tabela com duzentas colunas. Essa abordagem
+falha por três motivos, e reconhecer isso é o ponto de partida do projeto:
+
+1. **Não fecha.** A lista é combinatória. "Gol" cruza com pé (3) × região (3) × origem da
+   jogada (8) × técnica (7). São centenas de combinações só para finalização, e a próxima
+   pergunta do usuário nunca está entre as colunas existentes.
+2. **Não evolui.** Cada estatística nova exige alterar schema, migrar banco e reprocessar
+   a carga inteira. Em um TCC com prazo fechado, isso consome o prazo.
+3. **Não se sustenta na defesa.** Uma coluna `gols_canhota_fora_area` é um número sem
+   origem rastreável. Não dá para auditar como foi calculado nem reproduzir o resultado.
+
+**Decisão central: estatística derivada não é coluna, é consulta.**
+
+O sistema armazena *o que aconteceu em campo* — uma linha por ação, com seus qualificadores
+— e calcula *o que se quer saber* no momento da pergunta. O exemplo do enunciado vira:
+
+```
+evento.tipo = chute
+  ∧ chute.resultado = gol
+  ∧ chute.parte_do_corpo = pé_esquerdo
+  ∧ chute.na_grande_area = falso
+  ∧ evento.padrao_de_jogada = de_escanteio
+```
+
+Quatro filtros sobre colunas indexadas. Nenhuma coluna nova. A mesma tabela responde
+igualmente bem a uma pergunta que ainda não foi feita.
+
+Esta é a contribuição defensável do trabalho: não "mais um painel de estatísticas", mas um
+**modelo de eventos com um motor declarativo de métricas** sobre ele.
+
+---
+
+## 2. Camadas
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  viz/        Dash + Plotly — perfil, comparação, exploração     │
+├─────────────────────────────────────────────────────────────────┤
+│  api/        FastAPI — contrato HTTP, JSON                      │
+├─────────────────────────────────────────────────────────────────┤
+│  metrics/    Catálogo declarativo + motor de avaliação          │
+├─────────────────────────────────────────────────────────────────┤
+│  db/         Schema SQLAlchemy, sessão                          │
+├─────────────────────────────────────────────────────────────────┤
+│  ingestion/  Adaptadores por fonte → vocabulário do domínio     │
+├─────────────────────────────────────────────────────────────────┤
+│  domain/     Enums e geometria. Zero I/O, zero dependências.    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+A dependência só aponta para baixo. `domain/` não importa nada do projeto e é testável sem
+banco — por isso é onde mora a lógica que não pode estar errada (geometria do campo,
+definição de progressão, zonas do gol).
+
+A interface conversa com a API por HTTP, nunca com o banco direto. O custo é pequeno; o
+ganho é que trocar Dash por React mais adiante não toca em nada abaixo de `api/`.
+
+---
+
+## 3. Modelo de dados
+
+### Dimensões — o "quem, onde, quando"
+
+| Tabela | Papel |
+|---|---|
+| `countries` | Nacionalidade e sede. Guarda centroide lat/lon para o mapa-múndi. |
+| `competitions` | Competição, com `type` distinguindo nacional / estadual / continental / seleção / amistoso / base. |
+| `seasons` | Temporada de uma competição. |
+| `teams` | Clube ou seleção. |
+| `players` | Só atributos estáveis da pessoa. |
+| `player_nationalities` | Tabela própria, porque dupla cidadania é comum. |
+| `player_club_spells` | Histórico de clubes, com vigência e marcação de empréstimo. |
+| `matches` | Partida. |
+| `appearances` | Participação do atleta na partida: minutagem, posição, mando. |
+
+### Fato — `events`
+
+Uma linha por ação registrada em campo. Colunas comuns a qualquer evento (quando, quem,
+onde, em que posse) mais um JSON `qualifiers` com tudo que a fonte trouxe e ainda não virou
+coluna.
+
+Esse JSON é uma rede de segurança deliberada: uma métrica pensada no mês 3 do projeto pode
+precisar de um atributo não previsto no mês 1. Com o bruto preservado, ela é calculável sem
+reingerir nada.
+
+### Projeções — visões tipadas por família
+
+`shots`, `passes`, `dribbles`, `defensive_actions`, `goalkeeper_actions`,
+`disciplinary_actions`. Cada uma em relação 1:1 com `events`, contendo os atributos
+específicos daquela família já tipados e indexados.
+
+**Por que não consultar o JSON diretamente?** Porque quase toda métrica pedida é um filtro
+sobre poucos atributos de uma única família. Em colunas indexadas isso é um `WHERE` que usa
+índice; dentro de um blob JSON, em SQLite, é varredura completa da tabela. Com centenas de
+milhares de eventos, a diferença é entre um painel que responde e um que trava. O custo é um
+mapeamento mecânico na ingestão, pago uma única vez.
+
+### Desnormalizações deliberadas
+
+Duas, ambas de valores derivados na ingestão e nunca editados depois:
+
+- **`appearances.opponent_team_id` e `appearances.venue`.** Sem elas, "estatísticas contra o
+  time X" e "desempenho fora de casa" exigiriam dois JOINs em `matches` com `CASE` para
+  descobrir de que lado o jogador estava — em toda consulta do sistema. Com elas, viram um
+  `WHERE` indexado.
+- **`events.third`, `events.lane`, `events.grid_col/grid_row`.** Zonas derivadas de `(x, y)`
+  por função pura e imutável. Pré-calcular remove o mapa de calor e os recortes por setor do
+  caminho crítico.
+
+---
+
+## 4. Do pedido ao modelo: como cada família é calculada
+
+A tabela abaixo é o contrato entre a especificação e a implementação. Vale como anexo do TCC.
+
+### Finalização e gols
+
+| Pedido | Como é computado |
+|---|---|
+| Gols por campeonato | `shots.is_goal` agrupado por `competition` via `match → season` |
+| Gol de canhota / destra / cabeça | `shots.body_part` |
+| Gol de fora da área | `shots.in_penalty_area = falso` |
+| Gol dentro da área / pequena área | `shots.in_penalty_area` / `shots.in_six_yard_box` |
+| Direção do chute, canto do gol | `shots.goal_mouth_zone` (grade 3×3 a partir de `end_y`, `end_z`) |
+| Aproveitamento de chutes | `shots.is_on_target / count(shots)` |
+| Chute na trave | `shots.hit_post` |
+| Gol acrobático | `shots.technique ∈ {overhead_kick, diving_header, volley}` |
+| Gol de pênalti, aproveitamento, canto batido | `shots.shot_type = penalty` cruzado com `is_goal` e `goal_mouth_zone` |
+| Gol de falta, pé usado, direção | `shots.shot_type = free_kick` + `body_part` + `goal_mouth_zone` |
+| Lado de onde a falta foi cobrada | `events.lane` na origem do chute |
+| Gol vindo de escanteio | `events.play_pattern = from_corner` |
+| Gol vindo de cruzamento | passe-chave do chute com `passes.is_cross = verdadeiro` |
+| xG | `shots.xg` |
+
+### Passe e assistência
+
+| Pedido | Como é computado |
+|---|---|
+| Assistências por campeonato | `passes.is_goal_assist` agrupado por competição |
+| Pé usado / assistência de cabeça | `passes.body_part` |
+| Passe curto / médio / longo | `passes.length_bucket`, derivado de `length_m` |
+| Distância máxima e mínima | `MIN/MAX(passes.length_m)` |
+| Lado do campo | `events.lane` |
+| Passe para dentro da área / pequena área | `passes.into_penalty_area` / `into_six_yard_box` |
+| Pré-assistência | `passes.is_pre_assist`, resolvido na cadeia de posse |
+| Cruzamento | `passes.is_cross` |
+| Passe em escanteio ou falta | `passes.pass_type` |
+| Grandes chances criadas | `passes.is_shot_assist` filtrado por `xg` do chute resultante |
+| Direção (frente / lado / trás) | `passes.direction` |
+| Passe que rompe linhas | `passes.is_progressive` (critério Wyscout) |
+| Aproveitamento por faixa de distância | `is_complete` agrupado por `length_bucket` |
+
+### Drible
+
+| Pedido | Como é computado |
+|---|---|
+| Dribles certos, aproveitamento | `dribbles.is_complete` |
+| Drible dentro / fora da área | `dribbles.in_penalty_area` |
+| Lado do campo | `events.lane` |
+| Falta sofrida após drible | `dribbles.drew_foul` |
+| Drible que gerou chute / gol / assistência | `dribbles.led_to_shot` / `led_to_goal` / `led_to_assist` |
+
+Os quatro últimos campos são resolvidos na ingestão, percorrendo os eventos seguintes da
+mesma posse. Materializar isso evita consulta recursiva em tempo de leitura — a alternativa
+seria uma CTE recursiva por drible, inviável em painel interativo.
+
+### Defesa, duelo e goleiro
+
+| Pedido | Como é computado |
+|---|---|
+| Desarme, interceptação, corte, bloqueio, roubo de bola | `defensive_actions.action_type` |
+| Duelo ganho no chão / pelo alto | `defensive_actions.is_aerial` + `is_successful` |
+| Defesas de fora / dentro da área | `goalkeeper_actions.shot_from_outside_box` |
+| Direção do chute defendido | `goalkeeper_actions.shot_goal_mouth_zone` |
+| Defesa que deu rebote | `goalkeeper_actions.gave_rebound` |
+| Defesa de pênalti | `goalkeeper_actions.is_penalty_save` |
+| Saída certa | `action_type = keeper_sweeper` + `outcome` |
+| Clean sheet | `appearances.goals_against = 0` com minutagem integral |
+| Gols evitados | `SUM(shot_xg) − gols sofridos`, sobre `goalkeeper_actions` |
+
+### Disciplina
+
+| Pedido | Como é computado |
+|---|---|
+| Cartão no campo adversário x no próprio campo | `disciplinary_actions.in_own_half` |
+| Faltas por jogo | `is_foul_committed / count(appearances)` |
+| Falta perto da própria área | `near_own_penalty_area` |
+| Faltas sofridas | `is_foul_won` |
+
+---
+
+## 5. Recortes
+
+Todo recorte pedido — campeonato, agrupamento de campeonatos, janela de datas, adversário,
+casa/fora, categoria de base, seleção — é o mesmo objeto de filtro aplicado antes da
+agregação. Nenhuma métrica implementa recorte por conta própria:
+
+```python
+@dataclass(frozen=True)
+class Slice:
+    player_ids: tuple[int, ...] = ()
+    competition_ids: tuple[int, ...] = ()
+    competition_types: tuple[CompetitionType, ...] = ()
+    season_ids: tuple[int, ...] = ()
+    date_from: date | None = None
+    date_to: date | None = None
+    opponent_team_ids: tuple[int, ...] = ()
+    team_ids: tuple[int, ...] = ()
+    venue: Venue | None = None
+    min_minutes: int | None = None
+```
+
+É isso que faz "Messi em junho e julho de 2024" e "Messi na Champions 2021–2023 contra o
+Real Madrid" serem a mesma operação com argumentos diferentes. Um `Slice` imutável também é
+chave de cache natural.
+
+---
+
+## 6. O catálogo de métricas
+
+Cada métrica é um dado, não uma função solta:
+
+```python
+@dataclass(frozen=True)
+class MetricSpec:
+    key: str                  # "goals_left_foot_outside_box"
+    label: str                # "Gols de canhota de fora da área"
+    family: str               # "finalizacao"
+    source_table: type        # Shot
+    predicate: Callable       # lambda: monta o WHERE
+    aggregation: str          # count | sum | ratio | avg
+    numerator: str | None     # para razões
+    denominator: str | None
+    per_90: bool              # se admite normalização por 90 minutos
+    higher_is_better: bool    # orienta cor no radar e no comparativo
+    positions: tuple[PositionGroup, ...]  # a quem a métrica se aplica
+```
+
+Consequências práticas:
+
+- **Adicionar métrica é adicionar um registro**, não escrever código de consulta.
+- A **interface se monta sozinha**: o seletor de métricas, o radar e a tabela comparativa
+  leem o catálogo em vez de terem listas escritas à mão.
+- **Comparação entre jogadores fica correta por construção**: `higher_is_better` orienta a
+  escala, `positions` impede comparar clean sheet de goleiro com drible de ponta,
+  `per_90` evita comparar quem jogou 300 minutos com quem jogou 3000 em valores absolutos.
+- O catálogo **é o anexo de metodologia do TCC**: exportá-lo gera a tabela de definições
+  operacionais de todas as métricas, com fórmula e critério.
+
+---
+
+## 7. Fontes de dados
+
+### StatsBomb Open Data — fonte primária
+
+Dados evento a evento, gratuitos, com licença de uso não comercial e acadêmico. Trazem
+coordenadas, parte do corpo, técnica, padrão de jogada, xG e resultado por evento — que é
+exatamente o insumo que a especificação exige.
+
+Cobertura: Copa do Mundo masculina e feminina, Eurocopa, temporadas de La Liga com Messi,
+finais de Champions League, FA Women's Super League, Bundesliga 2015/16, entre outras.
+
+### Adaptador CSV — fonte secundária
+
+Para dados fornecidos por clube e para o que nenhum provedor aberto registra: lesões, valor
+de mercado, contrato. Grava nas mesmas tabelas, com `source` distinto.
+
+### Por que o par `(source, source_id)` em toda tabela
+
+Duas fontes descrevendo o mesmo jogador colidiriam ou duplicariam. Com esse par, cada tabela
+ganha uma chave natural que torna a ingestão **idempotente**: reprocessar a mesma partida
+atualiza em vez de duplicar. Em um projeto em que a carga será executada dezenas de vezes
+durante o desenvolvimento, isso não é refinamento, é requisito.
+
+---
+
+## 8. Limitações — a serem declaradas no texto
+
+Um TCC ganha credibilidade ao delimitar o que *não* faz. Estas são as fronteiras reais:
+
+**Não calculáveis a partir de dados de evento:**
+
+- Distância percorrida, número de sprints, velocidade média e máxima. Exigem *tracking data*
+  (posição de todos os 22 jogadores a 25 Hz), que não existe em fonte aberta. Foram
+  removidas do escopo.
+- Velocidade do chute. Não é registrada.
+
+**Limitações da fonte:**
+
+- **Cobertura.** A StatsBomb Open Data não inclui o Campeonato Brasileiro. O exemplo do
+  enunciado (Bruno Henrique, Flamengo) não é reproduzível com a fonte primária; o painel
+  será demonstrado com atletas cobertos. O adaptador CSV existe justamente para que dados
+  brasileiros possam ser carregados se e quando houver acesso a eles.
+- **Gol de peito.** A taxonomia de `body_part` para finalização tem apenas pé esquerdo, pé
+  direito, cabeça e "outro". Gol de peito cai em "outro", indistinguível de joelho ou coxa.
+- **Duelo aéreo.** A fonte registra explicitamente o duelo aéreo *perdido*; o vencido é
+  inferido de uma marca auxiliar em outros eventos. A contagem de duelos aéreos tem,
+  portanto, precisão menor que as demais.
+- **Normalização de campo.** Toda partida é normalizada para 120 × 80 jardas, então
+  distâncias absolutas carregam erro de escala de cerca de 4% em relação a um gramado de
+  105 × 68 m. O erro é sistemático e igual para todos os atletas, de modo que comparações
+  não são afetadas — apenas valores absolutos.
+
+**Fora do escopo por prazo:** clima, salário e contrato (tabela existe, alimentação é
+manual), equipe como entidade analítica de primeira classe, modelo de xG próprio.
+
+---
+
+## 9. Registro de decisões
+
+| # | Decisão | Motivo | Alternativa descartada |
+|---|---|---|---|
+| 1 | Modelo de eventos, métrica como consulta | Único caminho que suporta a combinatória pedida e admite extensão | Tabela larga de estatísticas agregadas |
+| 2 | Projeções tipadas por família | `WHERE` indexado em vez de varredura sobre JSON | Consultar `qualifiers` diretamente |
+| 3 | Preservar o JSON bruto além das projeções | Métrica futura sem reingestão | Descartar o que não vira coluna |
+| 4 | SQLite com schema portável a Postgres | Zero infraestrutura; volume do TCC cabe | Postgres desde o início |
+| 5 | Chave `(source, source_id)` universal | Ingestão idempotente e multi-fonte | Confiar no ID da fonte primária |
+| 6 | Enums como texto com CHECK | Banco legível na consulta manual, portável | Inteiros ou ENUM nativo |
+| 7 | Conversão isotrópica jarda→metro | Preserva largura oficial do gol e ângulos | Reescalar para 105 × 68 m |
+| 8 | Zonas pré-calculadas em `events` | Mapa de calor fora do caminho crítico | Derivar em tempo de consulta |
+| 9 | Dash em vez de React | Concentra o esforço no motor analítico, que é a contribuição | SPA em React/TypeScript |
+| 10 | Catálogo de métricas declarativo | Interface se monta sozinha; vira anexo de metodologia | Uma função por métrica |
+
+---
+
+## 10. Estrutura de diretórios
+
+```
+FScout/
+├── src/fscout/
+│   ├── config.py              Configuração via variáveis de ambiente
+│   ├── domain/                Vocabulário e geometria. Sem I/O.
+│   │   ├── enums.py           Enums do futebol, tolerantes a valor desconhecido
+│   │   └── pitch.py           Zonas, distâncias, ângulos, progressão
+│   ├── db/
+│   │   ├── base.py            Base declarativa e mixins
+│   │   ├── models.py          Schema
+│   │   └── session.py         Engine, sessão, PRAGMAs do SQLite
+│   ├── ingestion/
+│   │   ├── statsbomb/         Cliente, mapeador e adaptador
+│   │   ├── csv_adapter.py     Dados de clube e planilha manual
+│   │   └── pipeline.py        Orquestração idempotente
+│   ├── metrics/
+│   │   ├── registry.py        MetricSpec e catálogo
+│   │   ├── context.py         Slice (recortes)
+│   │   ├── predicates.py      Blocos reutilizáveis de filtro
+│   │   ├── definitions/       As métricas, por família
+│   │   └── engine.py          Avaliação do catálogo
+│   ├── api/                   FastAPI
+│   └── viz/                   Dash
+├── tests/
+├── docs/
+└── data/                      raw (cache) / processed / db
+```

@@ -216,3 +216,21 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Football Analytics - Dados
+data/raw/**/*.csv
+data/raw/**/*.json
+data/processed/**/*.csv
+data/processed/**/*.json
+data/db/*.db
+data/db/*.sqlite
+data/db/*.sqlite3
+
+# Scraping logs
+scraping_logs/
+*.log
+
+# Playwright
+.playwright/
+# Ambiente virtual na raiz
+.venv/
