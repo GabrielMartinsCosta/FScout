@@ -38,7 +38,7 @@ from fscout.domain.enums import (
 from fscout.metrics.context import Slice
 from fscout.metrics.definitions import shooting  # noqa: F401  (registra o catálogo)
 from fscout.metrics.engine import evaluate, minutes_by_player
-from fscout.metrics.registry import REGISTRY
+from fscout.metrics.registry import REGISTRY, Aggregation, MetricSpec, Unit
 
 RODADA_1 = date(2024, 6, 20)
 RODADA_2 = date(2024, 6, 27)
@@ -216,17 +216,55 @@ def test_disputa_de_penaltis_nao_entra_em_nenhuma_metrica(engine: Engine) -> Non
 
 
 def test_razoes_e_medias(engine: Engine) -> None:
-    valores = _valores(
-        engine,
-        ["aproveitamento_de_finalizacoes", "conversao_de_finalizacoes", "xg", "xg_por_finalizacao"],
-        Slice(),
-    )
-    artilheiro = valores["Artilheiro"]
+    """A conta da razão e da média, com métricas locais sem piso de amostra.
 
-    assert artilheiro["aproveitamento_de_finalizacoes"] == pytest.approx(3 / 4)
-    assert artilheiro["conversao_de_finalizacoes"] == pytest.approx(2 / 4)
-    assert artilheiro["xg"] == pytest.approx(0.4 + 0.05 + 0.02 + 0.78)
-    assert artilheiro["xg_por_finalizacao"] == pytest.approx((0.4 + 0.05 + 0.02 + 0.78) / 4)
+    O catálogo exige amostra mínima nessas métricas, e o fixture tem poucas finalizações de
+    propósito: a supressão por amostra insuficiente é verificada no teste seguinte.
+    """
+    locais = (
+        MetricSpec(
+            key="acerto_no_alvo_teste",
+            label="Acerto no alvo",
+            family="teste",
+            table=Shot,
+            aggregation=Aggregation.RATIO,
+            numerator=(Shot.is_on_target.is_(True),),
+            unit=Unit.PERCENT,
+            per_90=False,
+        ),
+        MetricSpec(
+            key="conversao_teste",
+            label="Conversão",
+            family="teste",
+            table=Shot,
+            aggregation=Aggregation.RATIO,
+            numerator=(Shot.is_goal.is_(True),),
+            unit=Unit.PERCENT,
+            per_90=False,
+        ),
+        MetricSpec(
+            key="xg_medio_teste",
+            label="xG médio",
+            family="teste",
+            table=Shot,
+            aggregation=Aggregation.AVERAGE,
+            value_column=Shot.xg,
+            unit=Unit.XG,
+            per_90=False,
+        ),
+        REGISTRY["xg"],
+    )
+
+    with Session(engine) as session:
+        resultados = evaluate(session, locais, Slice())
+        nomes = {pid: session.get(Player, pid).name for pid in resultados}
+    artilheiro = next(m for pid, m in resultados.items() if nomes[pid] == "Artilheiro")
+
+    xg_total = 0.4 + 0.05 + 0.02 + 0.78
+    assert artilheiro["acerto_no_alvo_teste"].value == pytest.approx(3 / 4)
+    assert artilheiro["conversao_teste"].value == pytest.approx(2 / 4)
+    assert artilheiro["xg_medio_teste"].value == pytest.approx(xg_total / 4)
+    assert artilheiro["xg"].value == pytest.approx(xg_total)
 
 
 def test_normalizacao_por_90_minutos(engine: Engine) -> None:
@@ -255,6 +293,17 @@ def test_recorte_por_data_e_por_mando(engine: Engine) -> None:
 def test_piso_de_minutagem_remove_quem_jogou_pouco(engine: Engine) -> None:
     valores = _valores(engine, ["gols"], Slice(min_minutes=90))
     assert set(valores) == {"Artilheiro"}
+
+
+def test_razao_com_amostra_insuficiente_nao_e_divulgada(engine: Engine) -> None:
+    """Aproveitamento exige amostra: 100% em um chute so nao e informacao."""
+    valores = _valores(
+        engine, ["aproveitamento_de_finalizacoes", "conversao_de_finalizacoes"], Slice()
+    )
+
+    # Artilheiro tem 4 finalizacoes e Reserva tem 1; o minimo da metrica e 10.
+    assert valores["Artilheiro"]["aproveitamento_de_finalizacoes"] is None
+    assert valores["Reserva"]["conversao_de_finalizacoes"] is None
 
 
 def test_percentil_respeita_o_sentido_da_metrica(engine: Engine) -> None:

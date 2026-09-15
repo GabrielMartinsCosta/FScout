@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 import logging
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -19,6 +21,8 @@ from fscout.ingestion.pipeline import ingest_season
 from fscout.ingestion.statsbomb.client import StatsBombClient
 from fscout.ingestion.transfermarkt.pipeline import enrich_from_transfermarkt
 from fscout.ingestion.weather import enrich_weather
+from fscout.metrics import definitions as metric_definitions  # noqa: F401
+from fscout.metrics.registry import REGISTRY
 
 app = typer.Typer(
     help="FScout: scouting de atletas a partir de dados evento a evento.",
@@ -213,6 +217,69 @@ def weather() -> None:
         )
     for name in report.venues_to_check:
         console.print(f"[yellow]conferir[/yellow] {name}: resultado não marcado como estádio")
+
+
+@app.command()
+def catalogo(
+    familia: Annotated[str | None, typer.Argument(help="Filtra por família de métricas.")] = None,
+    csv_path: Annotated[
+        Path | None, typer.Option("--csv", help="Exporta o catálogo para um arquivo CSV.")
+    ] = None,
+) -> None:
+    """Lista o catálogo de métricas: a tabela de definições operacionais do projeto."""
+    metricas = REGISTRY.by_family(familia) if familia else tuple(REGISTRY)
+    if not metricas:
+        console.print(f"[yellow]nenhuma métrica na família {familia!r}[/yellow]")
+        console.print(f"famílias: {', '.join(REGISTRY.families())}")
+        raise typer.Exit(code=1)
+
+    table = Table(title=f"Catálogo de métricas ({len(metricas)} de {len(REGISTRY)})")
+    for coluna in ("chave", "métrica", "família", "unidade", "agregação", "por 90", "sentido"):
+        table.add_column(coluna)
+    for spec in metricas:
+        table.add_row(
+            spec.key,
+            spec.label,
+            spec.family,
+            str(spec.unit),
+            str(spec.aggregation),
+            "sim" if spec.per_90 else "não",
+            "maior é melhor" if spec.higher_is_better else "menor é melhor",
+        )
+    console.print(table)
+
+    if csv_path is not None:
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        with csv_path.open("w", encoding="utf-8-sig", newline="") as arquivo:
+            escritor = csv.writer(arquivo)
+            escritor.writerow(
+                [
+                    "chave",
+                    "metrica",
+                    "familia",
+                    "unidade",
+                    "agregacao",
+                    "por_90",
+                    "sentido",
+                    "posicoes",
+                    "definicao",
+                ]
+            )
+            for spec in metricas:
+                escritor.writerow(
+                    [
+                        spec.key,
+                        spec.label,
+                        spec.family,
+                        str(spec.unit),
+                        str(spec.aggregation),
+                        "sim" if spec.per_90 else "nao",
+                        "maior e melhor" if spec.higher_is_better else "menor e melhor",
+                        " ".join(str(posicao) for posicao in spec.positions),
+                        spec.description,
+                    ]
+                )
+        console.print(f"Catálogo exportado para {csv_path}")
 
 
 @app.command()

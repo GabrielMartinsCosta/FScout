@@ -96,21 +96,25 @@ Três defeitos que só a validação contra dados reais revelaria:
 - O enum de mando de campo se chamava `Venue`, o mesmo nome da nova tabela de estádios, e
   derrubou o mapeamento inteiro. Virou `HomeAway`.
 
-## Fase 2 — Motor de métricas · Semanas 4 e 5
+## Fase 2 — Motor de métricas · Semana 1 — **em andamento**
 
-- `Slice`: o objeto de recorte, com aplicação uniforme em qualquer consulta
-- `MetricSpec` e o registro do catálogo
-- Predicados reutilizáveis (`is_goal`, `outside_box`, `from_corner`, `left_foot`, …)
-- Definições por família: finalização, passe, drible, defesa, goleiro, disciplina, geral
-- Normalização por 90 minutos e cálculo de percentis dentro de grupo de posição
-- Cache por `Slice` (que é imutável, portanto hasheável)
+- [x] `Slice`: o objeto de recorte, aplicado do mesmo jeito em qualquer consulta
+- [x] `MetricSpec` e o catálogo declarativo
+- [x] Motor de avaliação, com normalização por 90 minutos e percentil por população
+- [x] Piso de amostra em razões e médias
+- [x] 103 métricas em sete famílias, cobrindo a lista da especificação
+- [x] Exportação do catálogo como tabela de definições operacionais (`fscout catalogo --csv`)
+- [ ] Percentil dentro do grupo de posição, e não só da população avaliada
+- [ ] Métricas compostas, que cruzam famílias (participação em gols, minutos por gol)
+- [ ] Cache por `Slice`
 
-**Pronto quando:** `evaluate(spec, slice)` responde qualquer métrica do catálogo, e um
-teste confere que "gols de canhota de fora da área" bate com a contagem manual num jogo.
+**Conferência contra fatos conhecidos, na Copa América 2024:** Lautaro Martínez lidera gols
+(5, a artilharia oficial), James Rodríguez lidera assistências (6, o recorde do torneio) e
+Emiliano Martínez lidera gols evitados.
 
-**Meta de escopo:** **60 a 80 métricas** bem definidas. Não duzentas. Cubra as famílias
-inteiras com profundidade — é a completude *conceitual* que se defende, e o catálogo
-declarativo deixa evidente que acrescentar as demais é trivial.
+A meta declarada era de 60 a 80 métricas; o catálogo passou disso porque, com o motor
+pronto, cada métrica nova é um registro de cinco linhas. O limite continua valendo como
+regra de escopo: nada de métrica que exija coluna nova ou consulta especial.
 
 ## Fase 3 — API · Semana 6
 

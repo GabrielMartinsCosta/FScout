@@ -250,29 +250,39 @@ Cada métrica é um dado, não uma função solta:
 ```python
 @dataclass(frozen=True)
 class MetricSpec:
-    key: str                  # "goals_left_foot_outside_box"
-    label: str                # "Gols de canhota de fora da área"
+    key: str                  # "gols_canhota"
+    label: str                # "Gols de perna esquerda"
     family: str               # "finalizacao"
-    source_table: type        # Shot
-    predicate: Callable       # lambda: monta o WHERE
-    aggregation: str          # count | sum | ratio | avg
-    numerator: str | None     # para razões
-    denominator: str | None
-    per_90: bool              # se admite normalização por 90 minutos
-    higher_is_better: bool    # orienta cor no radar e no comparativo
-    positions: tuple[PositionGroup, ...]  # a quem a métrica se aplica
+    table: type               # a projeção de onde sai (Shot, Pass, ...)
+    aggregation: Aggregation  # count | sum | average | ratio
+    predicate: tuple          # o filtro que define a métrica
+    numerator: tuple          # em razões, o que conta como sucesso
+    unit: Unit                # count | percent | meters | xg
+    per_90: bool              # admite normalização por 90 minutos
+    higher_is_better: bool    # orienta cor e escala na comparação
+    positions: tuple          # a quem a métrica se aplica
+    min_sample: int           # amostra mínima para razões e médias
 ```
+
+**Estado atual: 103 métricas em sete famílias** — finalização (29), passe (22), defesa (13),
+goleiro (13), drible (11), disciplina (9) e gerais (6).
 
 Consequências práticas:
 
-- **Adicionar métrica é adicionar um registro**, não escrever código de consulta.
-- A **interface se monta sozinha**: o seletor de métricas, o radar e a tabela comparativa
-  leem o catálogo em vez de terem listas escritas à mão.
-- **Comparação entre jogadores fica correta por construção**: `higher_is_better` orienta a
-  escala, `positions` impede comparar clean sheet de goleiro com drible de ponta,
-  `per_90` evita comparar quem jogou 300 minutos com quem jogou 3000 em valores absolutos.
-- O catálogo **é o anexo de metodologia do TCC**: exportá-lo gera a tabela de definições
-  operacionais de todas as métricas, com fórmula e critério.
+- **Adicionar métrica é adicionar um registro.** Nenhuma delas exigiu coluna nova no banco:
+  "gol de canhota de fora da área vindo de escanteio" é um filtro sobre três colunas de
+  `shots` e uma de `events`.
+- **A interface se monta sozinha**, lendo o catálogo em vez de listas escritas à mão.
+- **A comparação fica correta por construção:** `positions` impede comparar clean sheet de
+  goleiro com drible de ponta, `per_90` evita confrontar quem jogou 300 minutos com quem
+  jogou 3.000, e `min_sample` impede que 100% de aproveitamento em um único duelo apareça no
+  topo de um ranking.
+- **O catálogo é o anexo de metodologia.** `fscout catalogo --csv` exporta a tabela de
+  definições operacionais de todas as métricas.
+
+Três regras valem para todas e por isso vivem no motor, não em cada definição: a disputa de
+pênaltis fica de fora, o piso de minutagem é aplicado depois da agregação, e o percentil
+respeita o sentido da métrica (em gols sofridos, menos é melhor).
 
 ---
 

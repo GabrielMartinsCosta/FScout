@@ -141,6 +141,7 @@ metric(
 )
 metric(
     key="distancia_media_da_finalizacao",
+    min_sample=5,
     label="Distância média da finalização",
     family=FAMILIA,
     table=Shot,
@@ -207,6 +208,7 @@ metric(
 )
 metric(
     key="aproveitamento_de_penaltis",
+    min_sample=3,
     label="Aproveitamento de pênaltis",
     family=FAMILIA,
     table=Shot,
@@ -237,6 +239,7 @@ metric(
 
 metric(
     key="aproveitamento_de_finalizacoes",
+    min_sample=10,
     label="Finalizações no alvo",
     family=FAMILIA,
     table=Shot,
@@ -248,6 +251,7 @@ metric(
 )
 metric(
     key="conversao_de_finalizacoes",
+    min_sample=10,
     label="Conversão de finalizações",
     family=FAMILIA,
     table=Shot,
@@ -284,6 +288,7 @@ metric(
 )
 metric(
     key="xg_por_finalizacao",
+    min_sample=5,
     label="xG por finalização",
     family=FAMILIA,
     table=Shot,

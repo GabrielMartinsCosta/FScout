@@ -76,6 +76,9 @@ class MetricSpec:
     higher_is_better: bool = True
     positions: tuple[PositionGroup, ...] = TODAS_AS_POSICOES
     include_shootout: bool = False
+    # Razao ou media abaixo deste numero de linhas nao e divulgada: 100% de aproveitamento
+    # em um unico duelo nao e informacao, e distorce comparacao e percentil.
+    min_sample: int = 0
     description: str = ""
 
     def __post_init__(self) -> None:

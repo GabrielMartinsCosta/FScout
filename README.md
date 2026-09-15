@@ -38,7 +38,7 @@ competições, com 96,8% dos atletas ligados à ficha biográfica.
 | `ingestion/` — Open-Meteo (clima por partida) | pronto, validado |
 | `linking/` — ligação de registros entre fontes | pronto, 96,8% |
 | `ingestion/` — API-Football (lesões, Brasileirão) | a fazer |
-| `metrics/` — catálogo e motor | a fazer |
+| `metrics/` — catálogo e motor (103 métricas) | em andamento |
 | `api/` — FastAPI | a fazer |
 | `viz/` — Dash e Plotly | a fazer |
 
@@ -86,6 +86,11 @@ fscout transfermarkt
 
 # Localiza os estádios e busca o clima de cada partida no horário do jogo
 fscout weather
+
+# Catálogo de métricas (a tabela de definições operacionais do projeto)
+fscout catalogo
+fscout catalogo finalizacao
+fscout catalogo --csv data/processed/catalogo_metricas.csv
 
 # Quantidade de registros por tabela
 fscout status

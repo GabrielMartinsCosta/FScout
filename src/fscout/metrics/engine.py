@@ -27,6 +27,9 @@ from fscout.metrics.registry import Aggregation, MetricSpec, MetricValue
 
 PER_90_MINUTES = 90
 
+# A disputa de penaltis e um periodo proprio: fica de fora por padrao.
+SHOOTOUT_PERIOD = 5
+
 
 def minutes_by_player(session: Session, recorte: Slice) -> dict[int, int]:
     """Minutos de cada atleta dentro do recorte."""
@@ -60,6 +63,8 @@ def evaluate(
         brutos = _evaluate_one(session, spec, recorte)
         for player_id, total_minutos in minutos.items():
             valor, amostra = brutos.get(player_id, (_valor_vazio(spec), 0))
+            if amostra < spec.min_sample:
+                valor = None
             resultados[player_id][spec.key] = MetricValue(
                 key=spec.key,
                 value=valor,
@@ -88,12 +93,17 @@ def _montar_consulta(spec: MetricSpec, recorte: Slice) -> Select[Any]:
     origem = spec.table
     valor, amostra = _expressoes(spec)
     consulta = select(origem.player_id, valor, amostra).select_from(origem)
-    consulta = consulta.join(Event, Event.id == origem.event_id)
+    if origem is not Event:
+        # As projeções guardam `event_id`; métrica sobre o próprio evento dispensa o join.
+        consulta = consulta.join(Event, Event.id == origem.event_id)
     consulta = join_context(consulta, origem)
 
     condicoes = list(appearance_conditions(recorte)) + list(spec.predicate)
-    if not spec.include_shootout and hasattr(origem, "is_shootout"):
-        condicoes.append(origem.is_shootout.is_(False))
+    if not spec.include_shootout:
+        if hasattr(origem, "is_shootout"):
+            condicoes.append(origem.is_shootout.is_(False))
+        elif origem is Event:
+            condicoes.append(Event.period != SHOOTOUT_PERIOD)
     for condicao in condicoes:
         consulta = consulta.where(condicao)
     return consulta.group_by(origem.player_id)
