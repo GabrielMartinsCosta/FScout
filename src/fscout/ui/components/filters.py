@@ -17,7 +17,8 @@ from typing import Any
 
 from dash import dcc, html
 
-from fscout.ui.theme import FONT_FAMILY, Mode, Tokens, tokens
+from fscout.ui.components.tiles import campo
+from fscout.ui.theme import FONT_FAMILY, Mode, tokens
 
 
 class Ids:
@@ -74,30 +75,12 @@ def opcoes_de_temporada(
     return opcoes
 
 
-def _campo(titulo: str, controle: Any, t: Tokens, largura: str) -> html.Div:
-    return html.Div(
-        [
-            html.Label(
-                titulo,
-                style={
-                    "color": t.ink_secondary,
-                    "fontSize": "11px",
-                    "display": "block",
-                    "marginBottom": "4px",
-                },
-            ),
-            controle,
-        ],
-        style={"flex": f"0 1 {largura}", "minWidth": "150px"},
-    )
-
-
 def barra(competicoes: list[dict[str, Any]], mode: Mode | str = "light") -> html.Div:
     """A linha de filtros. Tudo que estiver abaixo dela responde ao mesmo recorte."""
     t = tokens(mode)
     return html.Div(
         [
-            _campo(
+            campo(
                 "Competição",
                 dcc.Dropdown(
                     id=Ids.COMPETICAO,
@@ -108,7 +91,7 @@ def barra(competicoes: list[dict[str, Any]], mode: Mode | str = "light") -> html
                 t,
                 "260px",
             ),
-            _campo(
+            campo(
                 "Temporada",
                 dcc.Dropdown(
                     id=Ids.TEMPORADA,
@@ -119,7 +102,7 @@ def barra(competicoes: list[dict[str, Any]], mode: Mode | str = "light") -> html
                 t,
                 "280px",
             ),
-            _campo(
+            campo(
                 "Período",
                 dcc.DatePickerRange(
                     id=Ids.PERIODO,
@@ -131,13 +114,13 @@ def barra(competicoes: list[dict[str, Any]], mode: Mode | str = "light") -> html
                 t,
                 "250px",
             ),
-            _campo(
+            campo(
                 "Mando",
                 dcc.Dropdown(id=Ids.MANDO, options=MANDOS, value="todos", clearable=False),
                 t,
                 "170px",
             ),
-            _campo(
+            campo(
                 "Mínimo de minutos",
                 dcc.Input(
                     id=Ids.MINUTOS,

@@ -21,10 +21,10 @@ from dash import Input, Output, dash_table, dcc, html
 
 from fscout.ui import api_client
 from fscout.ui.components.filters import Ids as FiltroIds
-from fscout.ui.components.tiles import estilos_de_tabela
+from fscout.ui.components.tiles import campo, estilos_de_tabela
 from fscout.ui.figures.radar import MAX_SERIES_TODOS_OS_PARES, radar
 from fscout.ui.format import TRACO, formatar_percentil, formatar_valor
-from fscout.ui.theme import FONT_FAMILY, Mode, Tokens, tokens
+from fscout.ui.theme import FONT_FAMILY, Mode, tokens
 
 
 class Ids:
@@ -56,24 +56,6 @@ MODOS = [
 ROTULO_BASE = "Recorte principal"
 
 
-def _campo(titulo: str, controle: Any, t: Tokens, largura: str) -> html.Div:
-    return html.Div(
-        [
-            html.Label(
-                titulo,
-                style={
-                    "color": t.ink_secondary,
-                    "fontSize": "11px",
-                    "display": "block",
-                    "marginBottom": "4px",
-                },
-            ),
-            controle,
-        ],
-        style={"flex": f"0 1 {largura}", "minWidth": "160px"},
-    )
-
-
 def layout(mode: Mode | str = "light") -> html.Div:
     t = tokens(mode)
     try:
@@ -88,13 +70,13 @@ def layout(mode: Mode | str = "light") -> html.Div:
         [
             html.Div(
                 [
-                    _campo(
+                    campo(
                         "Atletas",
                         dcc.Dropdown(id=Ids.ATLETAS, multi=True, placeholder="Busque pelo nome"),
                         t,
                         "420px",
                     ),
-                    _campo(
+                    campo(
                         "Métricas",
                         dcc.Dropdown(
                             id=Ids.METRICAS,
@@ -105,7 +87,7 @@ def layout(mode: Mode | str = "light") -> html.Div:
                         t,
                         "460px",
                     ),
-                    _campo(
+                    campo(
                         "Segundo recorte (opcional)",
                         dcc.DatePickerRange(
                             id=Ids.PERIODO2,
@@ -117,7 +99,7 @@ def layout(mode: Mode | str = "light") -> html.Div:
                         t,
                         "250px",
                     ),
-                    _campo(
+                    campo(
                         "Tabela mostra",
                         dcc.RadioItems(
                             id=Ids.MODO,

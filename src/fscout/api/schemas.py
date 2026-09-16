@@ -149,6 +149,40 @@ class ShotOut(BaseModel):
     goal_mouth_zone: str | None = None
 
 
+class PassOut(BaseModel):
+    """Um passe, com o que o mapa de passes precisa desenhar e filtrar.
+
+    As marcas geométricas (`is_progressive`, `into_penalty_area`, `is_cross`) valem para
+    a tentativa, não para o acerto: "passe progressivo certo" é a combinação delas com
+    `is_complete`, e é a tela que decide combinar.
+    """
+
+    match_date: date
+    minute: int
+    opponent: str | None = None
+    recipient: str | None = None
+    x: float | None = None
+    y: float | None = None
+    end_x: float | None = None
+    end_y: float | None = None
+    outcome: str
+    is_complete: bool
+    pass_type: str
+    height: str | None = None
+    body_part: str | None = None
+    length_m: float | None = None
+    length_bucket: str | None = None
+    direction: str | None = None
+    is_cross: bool = False
+    is_switch: bool = False
+    is_through_ball: bool = False
+    is_progressive: bool = False
+    into_penalty_area: bool = False
+    is_shot_assist: bool = False
+    is_goal_assist: bool = False
+    is_pre_assist: bool = False
+
+
 class HeatmapCellOut(BaseModel):
     """Célula da grade do campo, base do mapa de calor."""
 

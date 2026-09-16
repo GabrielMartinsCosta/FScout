@@ -155,14 +155,26 @@ funciona" — e ele funciona.
 2. [x] **Mapa de chutes** — sobre o desenho do campo, tamanho por xG, cor por desfecho
 3. [x] **Radar comparativo** — percentis dentro do grupo de posição
 4. [x] **Mapa de calor** — a partir das células de grade pré-calculadas
-5. [ ] **Mapa de passes** — **bloqueado por falta de rota**: a API não expõe passes, só
-       finalizações e grade de calor. Exige `GET /players/{id}/passes` e um `PassOut`
+5. [x] **Mapa de passes** — origem, destino, cor por desfecho, com recorte por tipo.
+       Exigiu rota nova: `GET /players/{id}/passes` e o `PassOut`
 6. [x] **Tabela comparativa** — N atletas × M métricas, com segundo recorte independente
-7. [ ] **Boca do gol** — grade 3×3 (o dado já existe: `shots.goal_mouth_zone`)
+7. [x] **Boca do gol** — grade 3×3, nas duas perspectivas, com recorte de pênaltis
 8. [ ] **Mapa-múndi** — marcador por país, raio proporcional a G/A
 
-Os itens 1–4 e 6 foram feitos antes do 5 porque o 5 é o único que pedia rota nova, e o
-critério de pronto estava no 6. Do 7 em diante é ganho, não requisito.
+Os itens 1–4 e 6 foram feitos antes do 5 porque o 5 era o único que pedia rota nova, e o
+critério de pronto estava no 6.
+
+**Uma divergência encontrada ao conferir o mapa de passes contra o catálogo**, e que vale
+como método: as contagens do mapa e das métricas foram comparadas para Pedri (2.162
+passes). Cinco bateram exatamente e três não — progressivos (192 contra 108), para a área
+(94 contra 44) e bolas em profundidade (25 contra 7). Nenhum dos dois lados estava
+errado: as marcas `is_progressive`, `into_penalty_area` e `is_through_ball` são
+geométricas e valem para a **tentativa**, enquanto as métricas de mesmo nome somam só as
+**completas** — e os rótulos delas já diziam isso ("Passes progressivos *certos*"). O
+defeito era de texto: o rodapé do mapa dizia "192 passes progressivos" ao lado de um
+cartão marcado "108". Num mapa, o passe progressivo que se perdeu é justamente o que se
+quer ver, então o gráfico continua mostrando tentativas — o rodapé é que passou a dizer
+"tentativas, X certas e Y erradas". A distinção está fixada em teste.
 
 **A paleta não foi escolhida no olho.** A regra do método de visualização é que a
 segurança para daltonismo se calcula. O validador original é um script Node, e não há
@@ -260,15 +272,11 @@ faltante — é assim que se apresenta numa defesa.
 
 ## Próximo passo imediato
 
-Fechar os três itens que sobraram da Fase 4, nesta ordem de custo crescente:
-
-1. **Boca do gol** (item 7) — o dado já está gravado em `shots.goal_mouth_zone`; falta só
-   a figura, uma grade 3×3 com rampa sequencial. É a mais barata das três.
-2. **Mapa de passes** (item 5) — precisa de `GET /players/{id}/passes` e de um `PassOut`
-   com origem, destino, desfecho e tipo. A projeção `passes` já tem tudo isso no banco.
-3. **Mapa-múndi** (item 8) — o exemplo que originou o projeto. Precisa agregar G/A por
-   país de nacionalidade do adversário ou do próprio atleta; decidir qual antes de
-   desenhar, porque as duas leituras são diferentes.
+**Mapa-múndi** (item 8), o único que resta da Fase 4 — e o exemplo que originou o
+projeto. Precisa de uma rota que agregue gols e assistências por país do adversário, mais
+a decisão de como tratar países que a base de mapas não reconhece como soberanos
+(Inglaterra, Escócia e País de Gales aparecem no banco e não existem como país num mapa
+mundi padrão).
 
 Depois disso, Fase 5: API-Football (lesões e Brasileirão), testes de ponta a ponta,
 roteiro de reprodução e redação.

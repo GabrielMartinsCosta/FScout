@@ -122,6 +122,10 @@ def chutes(player_id: int, recorte: Recorte | None = None) -> list[dict[str, Any
     return _pedir("GET", f"/players/{player_id}/shots", params=limpar(recorte))
 
 
+def passes(player_id: int, recorte: Recorte | None = None) -> list[dict[str, Any]]:
+    return _pedir("GET", f"/players/{player_id}/passes", params=limpar(recorte))
+
+
 def mapa_de_calor(player_id: int, recorte: Recorte | None = None) -> list[dict[str, Any]]:
     return _pedir("GET", f"/players/{player_id}/heatmap", params=limpar(recorte))
 

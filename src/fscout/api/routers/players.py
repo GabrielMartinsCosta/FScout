@@ -12,6 +12,7 @@ from fscout.api.deps import SessionDep, SliceDep
 from fscout.api.schemas import (
     ClubSpellOut,
     HeatmapCellOut,
+    PassOut,
     PlayerProfileOut,
     PlayerSummaryOut,
     ShotOut,
@@ -22,6 +23,7 @@ from fscout.db.models import (
     Country,
     Event,
     Match,
+    Pass,
     Player,
     PlayerClubSpell,
     PlayerNationality,
@@ -250,6 +252,64 @@ def player_shots(session: SessionDep, recorte: SliceDep, player_id: int) -> list
             goal_mouth_zone=str(shot.goal_mouth_zone) if shot.goal_mouth_zone else None,
         )
         for shot, evento, data, oponente in session.execute(
+            consulta.order_by(Match.match_date, Event.minute)
+        )
+    ]
+
+
+@router.get("/{player_id}/passes", summary="Passes do atleta, para o mapa de passes")
+def player_passes(session: SessionDep, recorte: SliceDep, player_id: int) -> list[PassOut]:
+    """Uma linha por passe, com origem, destino e as marcas que a tela usa para filtrar.
+
+    Sem limite de linhas de propósito: o mapa precisa do conjunto inteiro para que a
+    contagem exibida seja a contagem real. Um teto silencioso faria a tela afirmar
+    "212 passes progressivos" quando o número verdadeiro fosse outro.
+    """
+    adversario = aliased(Team)
+    recebedor = aliased(Player)
+    consulta = _filtrar(
+        _com_contexto(
+            select(Pass, Event, Match.match_date, adversario.name, recebedor.name)
+            .select_from(Pass)
+            .join(Event, Event.id == Pass.event_id)
+            .join(
+                Appearance,
+                (Appearance.match_id == Pass.match_id) & (Appearance.player_id == Pass.player_id),
+            )
+            .join(adversario, adversario.id == Appearance.opponent_team_id)
+            .outerjoin(recebedor, recebedor.id == Pass.recipient_player_id)
+        ),
+        recorte,
+    ).where(Pass.player_id == player_id)
+
+    return [
+        PassOut(
+            match_date=data,
+            minute=evento.minute,
+            opponent=oponente,
+            recipient=destinatario,
+            x=evento.x,
+            y=evento.y,
+            end_x=passe.end_x,
+            end_y=passe.end_y,
+            outcome=str(passe.outcome),
+            is_complete=passe.is_complete,
+            pass_type=str(passe.pass_type),
+            height=str(passe.height) if passe.height else None,
+            body_part=str(passe.body_part) if passe.body_part else None,
+            length_m=passe.length_m,
+            length_bucket=passe.length_bucket,
+            direction=passe.direction,
+            is_cross=passe.is_cross,
+            is_switch=passe.is_switch,
+            is_through_ball=passe.is_through_ball,
+            is_progressive=passe.is_progressive,
+            into_penalty_area=passe.into_penalty_area,
+            is_shot_assist=passe.is_shot_assist,
+            is_goal_assist=passe.is_goal_assist,
+            is_pre_assist=passe.is_pre_assist,
+        )
+        for passe, evento, data, oponente, destinatario in session.execute(
             consulta.order_by(Match.match_date, Event.minute)
         )
     ]

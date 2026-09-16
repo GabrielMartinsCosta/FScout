@@ -39,6 +39,29 @@ POSICOES = {
 PES = {"left": "Esquerdo", "right": "Direito", "both": "Ambos", "unknown": TRACO}
 
 
+def campo(titulo: str, controle: Any, t: Tokens, largura: str = "220px") -> html.Div:
+    """Rótulo acima de um controle, na largura que ele ocupa na linha de filtros.
+
+    A largura é uma base flexível, não fixa: a linha precisa quebrar bem em telas
+    estreitas sem que os controles se espremam a ponto de esconder o texto.
+    """
+    return html.Div(
+        [
+            html.Label(
+                titulo,
+                style={
+                    "color": t.ink_secondary,
+                    "fontSize": "11px",
+                    "display": "block",
+                    "marginBottom": "4px",
+                },
+            ),
+            controle,
+        ],
+        style={"flex": f"0 1 {largura}", "minWidth": "150px"},
+    )
+
+
 def estilos_de_tabela(t: Tokens) -> dict[str, Any]:
     """Estilo das tabelas equivalentes aos gráficos, igual em todas as telas.
 
