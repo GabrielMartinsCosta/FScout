@@ -8,13 +8,18 @@ define, como agrega e a quem se aplica. Três consequências práticas:
 - exportado, o catálogo **é** a tabela de definições operacionais da metodologia do TCC.
 
 A comparação entre atletas fica correta por construção: `positions` impede comparar clean
-sheet de goleiro com drible de ponta, `higher_is_better` orienta a escala do gráfico e
-`per_90` evita confrontar quem jogou 300 minutos com quem jogou 3.000 em valores absolutos.
+sheet de goleiro com drible de ponta, `higher_is_better` orienta a escala do gráfico,
+`per_90` evita confrontar quem jogou 300 minutos com quem jogou 3.000 e `min_sample` impede
+que 100% de aproveitamento em um único duelo lidere um ranking.
+
+Há dois tipos de definição. A **métrica** sai de uma consulta a uma tabela. A **composta**
+não tem consulta própria: combina métricas já calculadas, e é assim que "participação em
+gols" soma gols com assistências, que vêm de tabelas diferentes.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -50,7 +55,7 @@ class Unit(StrEnum):
     COUNT = "count"
     PERCENT = "percent"
     METERS = "meters"
-    SECONDS = "seconds"
+    MINUTES = "minutes"
     XG = "xg"
 
 
@@ -76,8 +81,8 @@ class MetricSpec:
     higher_is_better: bool = True
     positions: tuple[PositionGroup, ...] = TODAS_AS_POSICOES
     include_shootout: bool = False
-    # Razao ou media abaixo deste numero de linhas nao e divulgada: 100% de aproveitamento
-    # em um unico duelo nao e informacao, e distorce comparacao e percentil.
+    # Razão ou média abaixo deste número de linhas não é divulgada: 100% de aproveitamento
+    # em um único duelo não é informação, e distorce comparação e percentil.
     min_sample: int = 0
     description: str = ""
 
@@ -93,22 +98,52 @@ class MetricSpec:
         return position is None or position in self.positions
 
 
+# A fórmula recebe os valores das métricas de entrada e a minutagem do atleta no recorte.
+CompositeFormula = Callable[[Mapping[str, float | None], int], float | None]
+
+
+@dataclass(frozen=True, eq=False)
+class CompositeSpec:
+    """Métrica derivada de outras, sem consulta própria.
+
+    Existe porque algumas estatísticas pedidas cruzam famílias: participação em gols soma
+    `shots` com `passes`, e minutos por gol divide a minutagem por uma contagem.
+    """
+
+    key: str
+    label: str
+    family: str
+    inputs: tuple[str, ...]
+    formula: CompositeFormula
+    unit: Unit = Unit.COUNT
+    per_90: bool = True
+    higher_is_better: bool = True
+    positions: tuple[PositionGroup, ...] = TODAS_AS_POSICOES
+    description: str = ""
+
+    def applies_to(self, position: PositionGroup | None) -> bool:
+        return position is None or position in self.positions
+
+
+Spec = MetricSpec | CompositeSpec
+
+
 class MetricRegistry:
-    """Coleção de métricas, indexada por chave."""
+    """Coleção de definições, indexada por chave. Aceita métricas e compostas."""
 
     def __init__(self) -> None:
-        self._specs: dict[str, MetricSpec] = {}
+        self._specs: dict[str, Spec] = {}
 
-    def register(self, spec: MetricSpec) -> MetricSpec:
+    def register(self, spec: Spec) -> Spec:
         if spec.key in self._specs:
             raise ValueError(f"métrica duplicada: {spec.key}")
         self._specs[spec.key] = spec
         return spec
 
-    def __getitem__(self, key: str) -> MetricSpec:
+    def __getitem__(self, key: str) -> Spec:
         return self._specs[key]
 
-    def __iter__(self) -> Iterator[MetricSpec]:
+    def __iter__(self) -> Iterator[Spec]:
         return iter(self._specs.values())
 
     def __len__(self) -> int:
@@ -120,13 +155,13 @@ class MetricRegistry:
     def families(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(spec.family for spec in self))
 
-    def by_family(self, family: str) -> tuple[MetricSpec, ...]:
+    def by_family(self, family: str) -> tuple[Spec, ...]:
         return tuple(spec for spec in self if spec.family == family)
 
-    def for_position(self, position: PositionGroup | None) -> tuple[MetricSpec, ...]:
+    def for_position(self, position: PositionGroup | None) -> tuple[Spec, ...]:
         return tuple(spec for spec in self if spec.applies_to(position))
 
-    def select(self, keys: Sequence[str]) -> tuple[MetricSpec, ...]:
+    def select(self, keys: Sequence[str]) -> tuple[Spec, ...]:
         return tuple(self[key] for key in keys)
 
 
@@ -135,12 +170,26 @@ REGISTRY = MetricRegistry()
 
 def metric(**campos: Any) -> MetricSpec:
     """Cria a métrica e a registra no catálogo global."""
-    return REGISTRY.register(MetricSpec(**campos))
+    spec = MetricSpec(**campos)
+    REGISTRY.register(spec)
+    return spec
+
+
+def composite(**campos: Any) -> CompositeSpec:
+    """Cria a métrica composta e a registra no catálogo global."""
+    spec = CompositeSpec(**campos)
+    REGISTRY.register(spec)
+    return spec
 
 
 @dataclass
 class MetricValue:
-    """Resultado de uma métrica para um atleta num recorte."""
+    """Resultado de uma métrica para um atleta num recorte.
+
+    `population` diz quantos atletas do mesmo grupo de posição entraram no cálculo do
+    percentil — sem isso, "percentil 90" pode significar "melhor que nove de dez" ou
+    "melhor que um de dois".
+    """
 
     key: str
     value: float | None
@@ -148,4 +197,5 @@ class MetricValue:
     minutes: int = 0
     per_90: float | None = None
     percentile: float | None = None
+    population: int = 0
     context: dict[str, Any] = field(default_factory=dict)

@@ -38,7 +38,7 @@ competições, com 96,8% dos atletas ligados à ficha biográfica.
 | `ingestion/` — Open-Meteo (clima por partida) | pronto, validado |
 | `linking/` — ligação de registros entre fontes | pronto, 96,8% |
 | `ingestion/` — API-Football (lesões, Brasileirão) | a fazer |
-| `metrics/` — catálogo e motor (103 métricas) | em andamento |
+| `metrics/` — catálogo e motor (108 definições) | pronto |
 | `api/` — FastAPI | a fazer |
 | `viz/` — Dash e Plotly | a fazer |
 

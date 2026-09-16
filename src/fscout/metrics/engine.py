@@ -4,17 +4,20 @@ Uma consulta por métrica, agrupada por atleta, com os filtros do recorte aplica
 mesmo lugar. O motor não conhece nenhuma estatística em particular — ele sabe contar, somar,
 tirar média e dividir, e é o catálogo que diz o que contar.
 
-Três cuidados que valem para toda métrica e por isso vivem aqui, e não em cada definição:
+Quatro cuidados que valem para toda métrica e por isso vivem aqui, e não em cada definição:
 
 - **Disputa de pênaltis** fica de fora, a menos que a métrica peça o contrário.
 - **Piso de minutagem** é aplicado depois da agregação: comparar quem jogou 90 minutos com
   quem jogou 3.000 em valor absoluto não diz nada.
-- **Percentil** é calculado dentro da população avaliada, respeitando o sentido da métrica
-  (em gols sofridos, menos é melhor).
+- **Amostra insuficiente** não vira número: razão e média abaixo do mínimo saem nulas.
+- **Percentil** é calculado dentro do grupo de posição do atleta, respeitando o sentido da
+  métrica (em gols sofridos, menos é melhor). Comparar o passe de um zagueiro com o de um
+  atacante produziria um ranking sem significado.
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -22,13 +25,30 @@ from sqlalchemy import Select, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from fscout.db.models import Event
-from fscout.metrics.context import Slice, appearance_conditions, join_context, minutes_query
-from fscout.metrics.registry import Aggregation, MetricSpec, MetricValue
+from fscout.domain.enums import PositionGroup
+from fscout.metrics.context import (
+    Slice,
+    appearance_conditions,
+    join_context,
+    minutes_query,
+    position_groups_query,
+)
+from fscout.metrics.registry import (
+    REGISTRY,
+    Aggregation,
+    CompositeSpec,
+    MetricSpec,
+    MetricValue,
+    Spec,
+)
 
 PER_90_MINUTES = 90
 
-# A disputa de penaltis e um periodo proprio: fica de fora por padrao.
+# A disputa de pênaltis é um período próprio: fica de fora por padrão.
 SHOOTOUT_PERIOD = 5
+
+# Abaixo de dois atletas no grupo, percentil não significa nada.
+MIN_POPULATION = 2
 
 
 def minutes_by_player(session: Session, recorte: Slice) -> dict[int, int]:
@@ -39,18 +59,35 @@ def minutes_by_player(session: Session, recorte: Slice) -> dict[int, int]:
     }
 
 
+def position_groups_by_player(session: Session, recorte: Slice) -> dict[int, PositionGroup | None]:
+    """Grupo de posição de cada atleta: aquele em que mais jogou dentro do recorte.
+
+    É o recorte que decide, e não o histórico: quem atuou de lateral na competição analisada
+    é comparado com laterais, mesmo que jogue de meia no clube.
+    """
+    melhor: dict[int, tuple[int, PositionGroup | None]] = {}
+    for player_id, grupo, minutos in session.execute(position_groups_query(recorte)).all():
+        total = int(minutos or 0)
+        if player_id not in melhor or total > melhor[player_id][0]:
+            melhor[player_id] = (total, grupo)
+    return {player_id: grupo for player_id, (_, grupo) in melhor.items()}
+
+
 def evaluate(
     session: Session,
-    specs: Sequence[MetricSpec],
+    specs: Sequence[Spec],
     recorte: Slice,
     *,
     minutes: Mapping[int, int] | None = None,
     with_percentiles: bool = True,
 ) -> dict[int, dict[str, MetricValue]]:
-    """Avalia as métricas pedidas e devolve os valores por atleta.
+    """Avalia as definições pedidas e devolve os valores por atleta.
 
     Atletas sem nenhuma ação da métrica ainda aparecem, com valor zero, desde que tenham
     minutagem no recorte: ausência de chute é informação, não ausência de dado.
+
+    Métricas compostas trazem junto as métricas de que dependem, que também aparecem no
+    resultado.
     """
     minutos = dict(minutes) if minutes is not None else minutes_by_player(session, recorte)
     if recorte.min_minutes is not None:
@@ -58,8 +95,10 @@ def evaluate(
             player_id: total for player_id, total in minutos.items() if total >= recorte.min_minutes
         }
 
+    basicas, compostas = _separar(specs)
     resultados: dict[int, dict[str, MetricValue]] = {player_id: {} for player_id in minutos}
-    for spec in specs:
+
+    for spec in basicas:
         brutos = _evaluate_one(session, spec, recorte)
         for player_id, total_minutos in minutos.items():
             valor, amostra = brutos.get(player_id, (_valor_vazio(spec), 0))
@@ -72,9 +111,44 @@ def evaluate(
                 minutes=total_minutos,
                 per_90=_por_90(spec, valor, total_minutos),
             )
-        if with_percentiles:
-            _preencher_percentis(spec, resultados)
+
+    for spec in compostas:
+        for player_id, total_minutos in minutos.items():
+            medidas = resultados[player_id]
+            entradas = {chave: medidas[chave].value for chave in spec.inputs if chave in medidas}
+            valor = spec.formula(entradas, total_minutos)
+            medidas[spec.key] = MetricValue(
+                key=spec.key,
+                value=valor,
+                sample=min(
+                    (medidas[chave].sample for chave in spec.inputs if chave in medidas), default=0
+                ),
+                minutes=total_minutos,
+                per_90=_por_90(spec, valor, total_minutos),
+            )
+
+    if with_percentiles:
+        grupos = position_groups_by_player(session, recorte)
+        for spec in (*basicas, *compostas):
+            _preencher_percentis(spec, resultados, grupos)
     return resultados
+
+
+def _separar(specs: Sequence[Spec]) -> tuple[list[MetricSpec], list[CompositeSpec]]:
+    """Separa métricas de compostas e acrescenta as dependências que faltarem."""
+    basicas: dict[str, MetricSpec] = {}
+    compostas: dict[str, CompositeSpec] = {}
+    for spec in specs:
+        if isinstance(spec, CompositeSpec):
+            compostas[spec.key] = spec
+        else:
+            basicas[spec.key] = spec
+    for spec in compostas.values():
+        for chave in spec.inputs:
+            dependencia = REGISTRY[chave]
+            if chave not in basicas and isinstance(dependencia, MetricSpec):
+                basicas[chave] = dependencia
+    return list(basicas.values()), list(compostas.values())
 
 
 def _evaluate_one(
@@ -127,25 +201,42 @@ def _valor_vazio(spec: MetricSpec) -> float | None:
     return 0.0 if spec.aggregation in (Aggregation.COUNT, Aggregation.SUM) else None
 
 
-def _por_90(spec: MetricSpec, valor: float | None, minutos: int) -> float | None:
+def _por_90(spec: Spec, valor: float | None, minutos: int) -> float | None:
     if not spec.per_90 or valor is None or minutos <= 0:
         return None
     return round(valor * PER_90_MINUTES / minutos, 4)
 
 
-def _preencher_percentis(spec: MetricSpec, resultados: dict[int, dict[str, MetricValue]]) -> None:
-    """Percentil dentro da população avaliada, pelo posto médio em caso de empate.
+def _preencher_percentis(
+    spec: Spec,
+    resultados: dict[int, dict[str, MetricValue]],
+    grupos: Mapping[int, PositionGroup | None],
+) -> None:
+    """Percentil dentro do grupo de posição, pelo posto médio em caso de empate.
 
-    Usa o valor por 90 minutos quando a métrica admite normalização; caso contrário, o valor
-    bruto. Métrica em que menos é melhor tem a escala invertida.
+    Atleta cujo grupo não está entre os da métrica não recebe percentil: um atacante não é
+    ranqueado em defesas de goleiro.
     """
-    medidas = [resultado[spec.key] for resultado in resultados.values() if spec.key in resultado]
-    valores = [
+    por_grupo: dict[PositionGroup, list[MetricValue]] = defaultdict(list)
+    for player_id, medidas in resultados.items():
+        grupo = grupos.get(player_id)
+        medida = medidas.get(spec.key)
+        if grupo is None or medida is None or not spec.applies_to(grupo):
+            continue
+        por_grupo[grupo].append(medida)
+
+    for medidas_do_grupo in por_grupo.values():
+        _ranquear(spec, medidas_do_grupo)
+
+
+def _ranquear(spec: Spec, medidas: Sequence[MetricValue]) -> None:
+    """Usa o valor por 90 minutos quando a métrica admite, e o bruto quando não."""
+    com_valor = [
         (medida, medida.per_90 if spec.per_90 and medida.per_90 is not None else medida.value)
         for medida in medidas
     ]
-    presentes = [(medida, valor) for medida, valor in valores if valor is not None]
-    if len(presentes) < 2:
+    presentes = [(medida, valor) for medida, valor in com_valor if valor is not None]
+    if len(presentes) < MIN_POPULATION:
         return
 
     ordenados = sorted(valor for _, valor in presentes)
@@ -155,3 +246,4 @@ def _preencher_percentis(spec: MetricSpec, resultados: dict[int, dict[str, Metri
         iguais = sum(1 for outro in ordenados if outro == valor)
         posicao = (menores + iguais / 2) / total
         medida.percentile = round(100 * (posicao if spec.higher_is_better else 1 - posicao), 1)
+        medida.population = total

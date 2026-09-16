@@ -96,25 +96,30 @@ Três defeitos que só a validação contra dados reais revelaria:
 - O enum de mando de campo se chamava `Venue`, o mesmo nome da nova tabela de estádios, e
   derrubou o mapeamento inteiro. Virou `HomeAway`.
 
-## Fase 2 — Motor de métricas · Semana 1 — **em andamento**
+## Fase 2 — Motor de métricas · Semana 1 — **concluída**
 
 - [x] `Slice`: o objeto de recorte, aplicado do mesmo jeito em qualquer consulta
 - [x] `MetricSpec` e o catálogo declarativo
-- [x] Motor de avaliação, com normalização por 90 minutos e percentil por população
+- [x] Motor de avaliação, com normalização por 90 minutos
 - [x] Piso de amostra em razões e médias
-- [x] 103 métricas em sete famílias, cobrindo a lista da especificação
+- [x] Percentil dentro do grupo de posição, com a população que o gerou
+- [x] Métricas compostas, que cruzam famílias (participação em gols, minutos por gol)
+- [x] 108 definições em sete famílias, cobrindo a lista da especificação
 - [x] Exportação do catálogo como tabela de definições operacionais (`fscout catalogo --csv`)
-- [ ] Percentil dentro do grupo de posição, e não só da população avaliada
-- [ ] Métricas compostas, que cruzam famílias (participação em gols, minutos por gol)
-- [ ] Cache por `Slice`
+
+**Cache por recorte foi deixado de fora de propósito.** É otimização, as consultas respondem
+rápido sobre 662 mil eventos, e otimizar antes de a interface mostrar lentidão gastaria prazo
+no lugar errado. O `Slice` é imutável, então continua servindo de chave quando fizer falta.
 
 **Conferência contra fatos conhecidos, na Copa América 2024:** Lautaro Martínez lidera gols
-(5, a artilharia oficial), James Rodríguez lidera assistências (6, o recorde do torneio) e
-Emiliano Martínez lidera gols evitados.
+(5, a artilharia oficial), James Rodríguez lidera participação em gols (7, com o recorde de 6
+assistências) e Emiliano Martínez lidera gols evitados. Os percentis saem por grupo: James é
+comparado entre 43 meias, Lautaro entre 36 atacantes, e um atacante não recebe percentil em
+métrica de goleiro.
 
-A meta declarada era de 60 a 80 métricas; o catálogo passou disso porque, com o motor
-pronto, cada métrica nova é um registro de cinco linhas. O limite continua valendo como
-regra de escopo: nada de métrica que exija coluna nova ou consulta especial.
+A meta declarada era de 60 a 80 métricas; o catálogo passou disso porque, com o motor pronto,
+cada métrica nova é um registro de cinco linhas. O limite continua valendo como regra de
+escopo: nada de métrica que exija coluna nova ou consulta especial.
 
 ## Fase 3 — API · Semana 6
 

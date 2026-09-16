@@ -234,7 +234,7 @@ def catalogo(
         raise typer.Exit(code=1)
 
     table = Table(title=f"Catálogo de métricas ({len(metricas)} de {len(REGISTRY)})")
-    for coluna in ("chave", "métrica", "família", "unidade", "agregação", "por 90", "sentido"):
+    for coluna in ("chave", "métrica", "família", "unidade", "tipo", "por 90", "sentido"):
         table.add_column(coluna)
     for spec in metricas:
         table.add_row(
@@ -242,7 +242,7 @@ def catalogo(
             spec.label,
             spec.family,
             str(spec.unit),
-            str(spec.aggregation),
+            str(getattr(spec, "aggregation", "composta")),
             "sim" if spec.per_90 else "não",
             "maior é melhor" if spec.higher_is_better else "menor é melhor",
         )
@@ -272,7 +272,7 @@ def catalogo(
                         spec.label,
                         spec.family,
                         str(spec.unit),
-                        str(spec.aggregation),
+                        str(getattr(spec, "aggregation", "composta")),
                         "sim" if spec.per_90 else "nao",
                         "maior e melhor" if spec.higher_is_better else "menor e melhor",
                         " ".join(str(posicao) for posicao in spec.positions),

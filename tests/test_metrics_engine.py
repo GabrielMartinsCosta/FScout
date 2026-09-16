@@ -323,3 +323,33 @@ def test_percentil_respeita_o_sentido_da_metrica(engine: Engine) -> None:
         por_nome["Reserva"]["finalizacoes_bloqueadas"].percentile
         > por_nome["Artilheiro"]["finalizacoes_bloqueadas"].percentile
     )
+
+
+def test_metricas_compostas_cruzam_familias(engine: Engine) -> None:
+    """Participação em gols soma finalizações com passes, que saem de tabelas diferentes."""
+    valores = _valores(engine, ["participacao_em_gols", "minutos_por_gol", "assistencias"], Slice())
+
+    assert valores["Artilheiro"]["assistencias"] == 0
+    assert valores["Artilheiro"]["participacao_em_gols"] == 2
+    assert valores["Artilheiro"]["minutos_por_gol"] == pytest.approx(90.0)  # 180 min, 2 gols
+    assert valores["Reserva"]["minutos_por_gol"] == pytest.approx(45.0)  # 45 min, 1 gol
+
+
+def test_composta_sem_denominador_fica_nula() -> None:
+    """Quem não marcou não recebe minutagem infinita por gol: recebe ausência."""
+    spec = REGISTRY["minutos_por_gol"]
+    assert spec.formula({"gols": 0.0}, 180) is None
+    assert spec.formula({"gols": None}, 180) is None
+    assert spec.formula({"gols": 2.0}, 180) == pytest.approx(90.0)
+
+
+def test_percentil_so_existe_dentro_do_grupo_de_posicao(engine: Engine) -> None:
+    """Atacante não é ranqueado em métrica de goleiro, ainda que o valor seja calculado."""
+    with Session(engine) as session:
+        resultados = evaluate(session, REGISTRY.select(["gols", "defesas"]), Slice())
+
+    for medidas in resultados.values():
+        assert medidas["gols"].percentile is not None
+        assert medidas["gols"].population == 2  # os dois atletas são atacantes
+        assert medidas["defesas"].percentile is None
+        assert medidas["defesas"].population == 0

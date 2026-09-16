@@ -264,8 +264,8 @@ class MetricSpec:
     min_sample: int           # amostra mínima para razões e médias
 ```
 
-**Estado atual: 103 métricas em sete famílias** — finalização (29), passe (22), defesa (13),
-goleiro (13), drible (11), disciplina (9) e gerais (6).
+**Estado atual: 108 definições em sete famílias** — finalização (29), passe (22), defesa (14), goleiro (13), drible (11), gerais (10) e disciplina (9) —, das quais
+5 são compostas.
 
 Consequências práticas:
 
@@ -277,6 +277,12 @@ Consequências práticas:
   goleiro com drible de ponta, `per_90` evita confrontar quem jogou 300 minutos com quem
   jogou 3.000, e `min_sample` impede que 100% de aproveitamento em um único duelo apareça no
   topo de um ranking.
+- **Métricas compostas cruzam famílias.** Participação em gols soma `shots` com `passes`;
+  minutos por gol divide a minutagem por uma contagem. Elas não têm consulta própria:
+  combinam métricas já calculadas, e o motor resolve a dependência sozinho.
+- **O percentil é calculado dentro do grupo de posição** em que o atleta mais atuou no
+  recorte, e vem acompanhado da população que o gerou — sem isso, "percentil 90" tanto
+  pode significar "melhor que nove entre dez" quanto "melhor que um entre dois".
 - **O catálogo é o anexo de metodologia.** `fscout catalogo --csv` exporta a tabela de
   definições operacionais de todas as métricas.
 

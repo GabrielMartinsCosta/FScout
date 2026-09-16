@@ -138,3 +138,28 @@ def opponents_of(player_ids: Sequence[int]) -> Any:
         .where(adversario.player_id.in_(player_ids))
         .order_by(adversario.opponent_team_id)
     )
+
+
+def position_groups_query(recorte: Slice) -> Select[Any]:
+    """Minutos por atleta e grupo de posição dentro do recorte.
+
+    O grupo em que o atleta mais atuou define com quem ele é comparado no percentil. Quem
+    jogou de lateral na competição analisada é comparado com laterais, mesmo que atue em
+    outra função no clube.
+    """
+    from sqlalchemy import func, select
+
+    consulta = (
+        select(
+            Appearance.player_id,
+            Appearance.position_group,
+            func.sum(Appearance.minutes_played),
+        )
+        .join(Match, Match.id == Appearance.match_id)
+        .join(Season, Season.id == Match.season_id)
+        .join(Competition, Competition.id == Season.competition_id)
+        .group_by(Appearance.player_id, Appearance.position_group)
+    )
+    for condicao in appearance_conditions(recorte):
+        consulta = consulta.where(condicao)
+    return consulta
