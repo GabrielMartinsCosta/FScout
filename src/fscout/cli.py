@@ -298,6 +298,22 @@ def api(
 
 
 @app.command()
+def ui(
+    host: Annotated[str, typer.Option(help="Endereço de escuta.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Porta.")] = 8050,
+    debug: Annotated[
+        bool, typer.Option("--debug", help="Recarrega ao salvar, para desenvolvimento.")
+    ] = False,
+) -> None:
+    """Sobe o painel. Exige a API no ar, em outro terminal (`fscout api`)."""
+    from fscout.ui.app import criar_app
+
+    console.print(f"Painel em http://{host}:{port}")
+    console.print("A API precisa estar respondendo; suba-a com [bold]fscout api[/bold].")
+    criar_app().run(host=host, port=port, debug=debug)
+
+
+@app.command()
 def status() -> None:
     """Quantidade de registros por tabela."""
     create_all()

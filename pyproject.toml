@@ -38,6 +38,18 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# Porte fiel do validador de paleta: os caracteres Unicode que o ruff marca como
+# ambiguos sao deliberados e nao podem ser trocados. A classe WS_RUN precisa conter
+# exatamente os mesmos caracteres de espaco do original (NBSP, EN QUAD, separadores
+# de linha e paragrafo) porque e ela que define a fronteira de entrada; trocar "×"
+# por "x" ou "–" por "-" mudaria o texto do relatorio, que existe justamente para
+# ser comparado com a saida do script original em JavaScript.
+"scripts/validate_palette.py" = ["RUF001", "RUF002", "RUF003"]
+# O teste da fronteira de entrada precisa conter os proprios caracteres de espaco
+# incomuns que verifica: trocá-los por espaco comum apagaria o que o teste testa.
+"tests/test_palette_validator.py" = ["RUF001"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

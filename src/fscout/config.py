@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     )
 
     database_url: str = "sqlite:///data/db/fscout.db"
+    # Endereco da API que o painel consome. O painel nao fala com o banco: tudo o que
+    # ele mostra passa pelos mesmos endpoints documentados em /docs.
+    api_url: str = "http://127.0.0.1:8000"
     statsbomb_base_url: str = "https://raw.githubusercontent.com/statsbomb/open-data/master/data"
     transfermarkt_base_url: str = "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data"
     raw_dir: Path = PROJECT_ROOT / "data" / "raw"

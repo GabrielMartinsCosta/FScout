@@ -98,6 +98,13 @@ fscout status
 # Sobe a API; a documentação interativa fica em http://127.0.0.1:8000/docs
 fscout api
 
+# Sobe o painel, em OUTRO terminal e com a API no ar: http://127.0.0.1:8050
+fscout ui
+
+# Verifica a paleta dos gráficos por cálculo (daltonismo, contraste, luminosidade).
+# Três séries é o teto das formas em que qualquer marca encosta em qualquer outra.
+python scripts/validate_palette.py "#2a78d6,#eb6834,#1baf7a" --mode light --pairs all
+
 # Testes (o de integração baixa ~4 MB na primeira vez)
 pytest
 pytest -m "not integration"        # sem acesso à rede

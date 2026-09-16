@@ -392,6 +392,15 @@ modelo de xG próprio, segunda fonte de eventos (Wyscout).
 | 18 | Estádio como entidade, com coordenada | Uma geocodificação por estádio, não por partida | Latitude e longitude na partida |
 | 19 | Correção manual descarta o clima gravado | Sem isso a correção não teria efeito | Corrigir só a coordenada |
 | 20 | Clima pedido em UTC | Evita converter fuso e horário de verão no meio da temporada | Pedir no fuso local |
+| 21 | O painel fala com a API, nunca com o banco | Uma definição só de cada número; a tela não pode discordar da API | Dash consultando o banco direto |
+| 22 | Paleta verificada por cálculo, com o validador portado para Python | Não há Node nesta máquina, e a segurança para daltonismo se mede | Estimar a olho, ou pular a verificação |
+| 23 | Teto de três séries em formas de todos os pares | Medido: a quarta reprova com ΔE 13.7, abaixo do piso de 15 | Quatro ou mais séries, ou matizes gerados |
+| 24 | Toda figura acompanhada da tabela equivalente | Cor não é canal único, e duas cores do modo claro ficam abaixo de 3:1 | Só o gráfico |
+| 25 | Tamanho do chute em escala absoluta de xG | Dois mapas lado a lado ficam comparáveis | Escala relativa ao melhor chute de cada atleta |
+| 26 | Métrica sem percentil sai do radar | Nulo não é zero; zero afirmaria "é péssimo" onde não se sabe | Desenhar o nulo como zero |
+| 27 | A regra de "qual número exibir" mora num lugar só | O valor na tela tem que ser aquele sobre o qual o percentil foi calculado | Cada tela decidindo por conta própria |
+| 28 | As duas telas ficam montadas; a aba troca a visibilidade | Não obriga a silenciar exceções de callback, que esconderiam erro real | `dcc.Tabs` trocando o conteúdo |
+| 29 | Painel só no modo claro, com o escuro pronto | Os controles do Dash não são tematizados sem CSS próprio | Botão de tema escurecendo só os gráficos |
 
 ---
 
@@ -401,7 +410,7 @@ modelo de xG próprio, segunda fonte de eventos (Wyscout).
 FScout/
 ├── src/fscout/
 │   ├── config.py              Configuração via variáveis de ambiente
-│   ├── cli.py                 competitions, ingest, transfermarkt, weather, status
+│   ├── cli.py                 competitions, ingest, transfermarkt, weather, catalogo, api, ui, status
 │   ├── domain/                Vocabulário e geometria. Sem I/O.
 │   │   ├── enums.py           Enums do futebol, tolerantes a valor desconhecido
 │   │   └── pitch.py           Zonas, distâncias, ângulos, progressão
@@ -429,7 +438,17 @@ FScout/
 │   │   ├── deps.py            Sessão por requisição e recorte vindo da consulta
 │   │   ├── schemas.py         Formatos de entrada e saída
 │   │   └── routers/           catalog, reference, players, metrics
-│   └── viz/                   Dash (Fase 4)
+│   └── ui/                    Painel Dash. Consome a API, nunca o banco.
+│       ├── theme.py           Tokens de cor verificados e template do gráfico
+│       ├── api_client.py      Único caminho de dados do painel
+│       ├── format.py          Como um número do motor vira texto na tela
+│       ├── pitch.py           Desenho do campo, sob as figuras
+│       ├── app.py             Montagem, abas e callbacks do recorte
+│       ├── figures/           shot_map, heatmap, radar
+│       ├── components/        Cartões de resumo e barra de recortes
+│       └── pages/             perfil, comparar
+├── scripts/
+│   └── validate_palette.py    Verificação computável da paleta (porte do original)
 ├── tests/
 ├── docs/
 │   ├── ARQUITETURA.md

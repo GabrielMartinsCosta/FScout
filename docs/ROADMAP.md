@@ -146,20 +146,71 @@ Conferido contra o banco real: a ficha do Lautaro Martínez traz altura, pé, va
 e contrato; as 11 finalizações dele na Copa América saem com distância, xG e canto do gol; e
 a comparação entre recortes mostra 5 gols na Copa América contra 0 na Copa do Mundo de 2022.
 
-## Fase 4 — Visualização · Semanas 7 a 9
+## Fase 4 — Visualização · Semana 2 — **critério de pronto atingido**
 
-Prioridade estrita. Se o tempo acabar, acaba de baixo para cima.
+Prioridade estrita, de cima para baixo. O critério declarado era "pronto quando o item 6
+funciona" — e ele funciona.
 
-1. **Perfil do atleta** — dados básicos, cartões de resumo, barra de recortes
-2. **Mapa de chutes** — sobre o desenho do campo, tamanho por xG, cor por desfecho
-3. **Radar comparativo** — percentis dentro do grupo de posição, 2 ou mais atletas
-4. **Mapa de calor** — a partir das células de grade pré-calculadas
-5. **Mapa de passes** — origem, destino, cor por sucesso, filtro por tipo
-6. **Tabela comparativa** — N jogadores × M métricas, com recorte independente por coluna
-7. **Boca do gol** — grade 3×3, para pênaltis e para a leitura do goleiro
-8. **Mapa-múndi** — marcador por país, raio proporcional a G/A
+1. [x] **Perfil do atleta** — ficha, cartões de resumo, barra de recortes
+2. [x] **Mapa de chutes** — sobre o desenho do campo, tamanho por xG, cor por desfecho
+3. [x] **Radar comparativo** — percentis dentro do grupo de posição
+4. [x] **Mapa de calor** — a partir das células de grade pré-calculadas
+5. [ ] **Mapa de passes** — **bloqueado por falta de rota**: a API não expõe passes, só
+       finalizações e grade de calor. Exige `GET /players/{id}/passes` e um `PassOut`
+6. [x] **Tabela comparativa** — N atletas × M métricas, com segundo recorte independente
+7. [ ] **Boca do gol** — grade 3×3 (o dado já existe: `shots.goal_mouth_zone`)
+8. [ ] **Mapa-múndi** — marcador por país, raio proporcional a G/A
 
-**Pronto quando:** o item 6 funciona. Do 7 em diante é ganho, não requisito.
+Os itens 1–4 e 6 foram feitos antes do 5 porque o 5 é o único que pedia rota nova, e o
+critério de pronto estava no 6. Do 7 em diante é ganho, não requisito.
+
+**A paleta não foi escolhida no olho.** A regra do método de visualização é que a
+segurança para daltonismo se calcula. O validador original é um script Node, e não há
+Node nesta máquina, então ele foi **portado para Python** (`scripts/validate_palette.py`)
+mantendo as matrizes de Machado, Oliveira & Fernandes (2009) e a definição de ΔE em
+OKLab. O porte reproduz exatamente os números publicados na referência, o que é a prova
+de que ele não se desviou:
+
+| Subconjunto | Modo | CVD (pior par) | Visão normal | Veredito |
+|---|---|---|---|---|
+| 8 séries, pares adjacentes | claro | 9.1 | 19.6 | passa |
+| 8 séries, pares adjacentes | escuro | 8.4 | 19.3 | passa |
+| 3 séries, todos os pares | claro | 9.2 | 24.0 | passa |
+| 3 séries, todos os pares | escuro | 9.4 | 20.9 | passa |
+| 4 séries, todos os pares | claro | 9.1 | **13.7** | **reprova** |
+
+A última linha é o que governa o desenho das telas: em formas nas quais qualquer série
+pode encostar em qualquer outra — dispersão, bolha, radar — o teto é de **três séries**,
+porque a quarta põe amarelo ao lado de laranja e o par fica indistinguível até para quem
+enxerga todas as cores. Daí o mapa de chutes ter três classes de desfecho e o radar
+aceitar no máximo três séries (três atletas num recorte, ou um atleta em dois recortes).
+
+Três decisões que precisam constar no texto:
+
+- **"No alvo" exclui trave e bloqueio.** Chute defendido pelo goleiro conta, inclusive o
+  espalmado na trave; bola na trave sem defesa e bloqueio de jogador de linha não contam.
+  É a definição corrente de *shots on target*, e é onde uma comparação com fonte externa
+  diverge se o critério não estiver escrito.
+- **O tamanho do chute é escala absoluta de xG (0 a 1).** Régua relativa ao melhor chute
+  de cada atleta tornaria dois mapas lado a lado incomparáveis.
+- **Métrica sem percentil sai do radar; não vira zero.** Amostra abaixo do mínimo, grupo
+  de posição com menos de dois atletas ou métrica que não se aplica à posição produzem
+  valor nulo. Desenhar isso como zero afirmaria "é péssimo" onde o correto é "não sei";
+  as métricas descartadas aparecem nomeadas abaixo do gráfico.
+
+**Toda figura tem tabela equivalente**, saída da mesma resposta da API. É exigência de
+acessibilidade (escala contínua de cor não é canal único; duas cores do modo claro ficam
+abaixo de 3:1 e só são liberadas com o valor legível em outro lugar) e, de quebra, é o
+que permite conferir na banca o número que está no desenho.
+
+**O painel sai só no modo claro.** Os degraus escuros estão definidos e verificados
+contra a superfície escura, e toda figura já recebe o modo como parâmetro — mas os
+controles do Dash não são tematizados sem CSS próprio, e um botão que escurece os
+gráficos deixando os filtros brancos é pior que não ter botão. Fica pronto para ligar.
+
+Conferido contra o banco real: as 11 finalizações de Lautaro Martínez na Copa América
+saem no mapa como **5 gols**, 3 no alvo e 3 para fora — e os 5 gols são a artilharia
+oficial do torneio. A comparação com segundo recorte isola a janela de 20 a 30 de junho.
 
 ## Fase 5 — Consolidação · Semanas 10 e 11
 
@@ -209,6 +260,15 @@ faltante — é assim que se apresenta numa defesa.
 
 ## Próximo passo imediato
 
-Fase 2, o motor de métricas: o `Slice` de recortes, o catálogo declarativo de `MetricSpec` e
-a normalização por 90 minutos. É a contribuição central do trabalho, e agora ela tem sobre o
-que rodar: 662 mil eventos de 182 partidas, com ficha, valor de mercado e clima ligados.
+Fechar os três itens que sobraram da Fase 4, nesta ordem de custo crescente:
+
+1. **Boca do gol** (item 7) — o dado já está gravado em `shots.goal_mouth_zone`; falta só
+   a figura, uma grade 3×3 com rampa sequencial. É a mais barata das três.
+2. **Mapa de passes** (item 5) — precisa de `GET /players/{id}/passes` e de um `PassOut`
+   com origem, destino, desfecho e tipo. A projeção `passes` já tem tudo isso no banco.
+3. **Mapa-múndi** (item 8) — o exemplo que originou o projeto. Precisa agregar G/A por
+   país de nacionalidade do adversário ou do próprio atleta; decidir qual antes de
+   desenhar, porque as duas leituras são diferentes.
+
+Depois disso, Fase 5: API-Football (lesões e Brasileirão), testes de ponta a ponta,
+roteiro de reprodução e redação.
