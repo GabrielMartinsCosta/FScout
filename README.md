@@ -39,7 +39,7 @@ competições, com 96,8% dos atletas ligados à ficha biográfica.
 | `linking/` — ligação de registros entre fontes | pronto, 96,8% |
 | `ingestion/` — API-Football (lesões, Brasileirão) | a fazer |
 | `metrics/` — catálogo e motor (108 definições) | pronto |
-| `api/` — FastAPI | a fazer |
+| `api/` — FastAPI | pronto |
 | `viz/` — Dash e Plotly | a fazer |
 
 ## Requisitos
@@ -94,6 +94,9 @@ fscout catalogo --csv data/processed/catalogo_metricas.csv
 
 # Quantidade de registros por tabela
 fscout status
+
+# Sobe a API; a documentação interativa fica em http://127.0.0.1:8000/docs
+fscout api
 
 # Testes (o de integração baixa ~4 MB na primeira vez)
 pytest

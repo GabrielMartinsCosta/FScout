@@ -425,7 +425,10 @@ FScout/
 │   │   ├── statsbomb/         Cliente, vocabulário, relógio, encadeamentos, mapeador
 │   │   └── transfermarkt/     Cliente, ligador, enriquecimento, orquestração
 │   ├── metrics/               Catálogo e motor de métricas (Fase 2)
-│   ├── api/                   FastAPI (Fase 3)
+│   ├── api/                   Contrato HTTP
+│   │   ├── deps.py            Sessão por requisição e recorte vindo da consulta
+│   │   ├── schemas.py         Formatos de entrada e saída
+│   │   └── routers/           catalog, reference, players, metrics
 │   └── viz/                   Dash (Fase 4)
 ├── tests/
 ├── docs/

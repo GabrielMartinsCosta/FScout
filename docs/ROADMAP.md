@@ -121,16 +121,30 @@ A meta declarada era de 60 a 80 métricas; o catálogo passou disso porque, com 
 cada métrica nova é um registro de cinco linhas. O limite continua valendo como regra de
 escopo: nada de métrica que exija coluna nova ou consulta especial.
 
-## Fase 3 — API · Semana 6
+## Fase 3 — API · Semana 1 — **concluída**
 
-- `GET /players` — busca e filtro
-- `GET /players/{id}` — ficha e histórico
-- `POST /metrics/evaluate` — catálogo avaliado sob um `Slice`
-- `POST /compare` — N jogadores × M métricas × K recortes
-- `GET /players/{id}/shots` e `/passes` — eventos brutos para os mapas
-- `GET /catalog` — o catálogo de métricas, que a interface consome para se montar
+- [x] `GET /catalog` — o catálogo de métricas, que a interface consome para se montar
+- [x] `GET /competitions` e `GET /teams` — o que preenche os filtros
+- [x] `GET /players` — busca dentro de um recorte, ordenada por minutagem
+- [x] `GET /players/{id}` — ficha, com o que veio das fontes fora dos eventos
+- [x] `GET /players/{id}/shots` e `/heatmap` — dados brutos dos mapas de campo
+- [x] `POST /metrics/evaluate` — o catálogo avaliado sob um recorte
+- [x] `POST /compare` — N atletas x M métricas x K recortes
+- [x] `fscout api` sobe o serviço; a documentação interativa fica em `/docs`
 
-**Pronto quando:** `/docs` do FastAPI responde tudo que a interface vai precisar.
+**Todo endpoint de leitura aceita o mesmo conjunto de filtros de recorte**, de modo que
+"gols em junho" e "gols contra determinado adversário" são a mesma chamada com argumentos
+diferentes. A comparação aceita recortes diferentes para os mesmos atletas, que é o que
+permite "2024 contra 2025".
+
+**Decisão que precisa constar no texto:** o percentil é calculado sobre toda a população do
+recorte, e não apenas sobre os atletas consultados. Filtrar antes tornaria o percentil
+dependente de quem foi pedido na requisição — dois atletas comparados entre si apareceriam
+sempre como percentil 0 e 100.
+
+Conferido contra o banco real: a ficha do Lautaro Martínez traz altura, pé, valor de mercado
+e contrato; as 11 finalizações dele na Copa América saem com distância, xG e canto do gol; e
+a comparação entre recortes mostra 5 gols na Copa América contra 0 na Copa do Mundo de 2022.
 
 ## Fase 4 — Visualização · Semanas 7 a 9
 

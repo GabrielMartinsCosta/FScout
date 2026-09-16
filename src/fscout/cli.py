@@ -283,6 +283,21 @@ def catalogo(
 
 
 @app.command()
+def api(
+    host: Annotated[str, typer.Option(help="Endereço de escuta.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Porta.")] = 8000,
+    reload: Annotated[
+        bool, typer.Option("--reload", help="Recarrega ao salvar, para desenvolvimento.")
+    ] = False,
+) -> None:
+    """Sobe a API. A documentação interativa fica em /docs."""
+    import uvicorn
+
+    console.print(f"Documentação interativa em http://{host}:{port}/docs")
+    uvicorn.run("fscout.api.main:app", host=host, port=port, reload=reload)
+
+
+@app.command()
 def status() -> None:
     """Quantidade de registros por tabela."""
     create_all()
