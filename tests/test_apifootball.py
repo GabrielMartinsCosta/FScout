@@ -23,6 +23,7 @@ from fscout.ingestion.apifootball import (
     _achatar,
     _cliente,
     _competicoes_de,
+    _intervalo_do_plano,
     avaliar,
 )
 
@@ -172,6 +173,57 @@ def test_busca_de_competicao_ignora_caixa_e_aceita_varios_termos() -> None:
 def test_grupos_minimos_sao_os_que_viram_metrica() -> None:
     """Fixa o contrato: mudar isto muda o que a ferramenta consegue calcular."""
     assert sorted(GRUPOS_MINIMOS) == ["duels", "passes", "shots"]
+
+
+# ----------------------------------------------------------------------------------------
+# Restrição de plano: a recusa é informação de cobertura disfarçada de erro
+# ----------------------------------------------------------------------------------------
+
+
+def test_intervalo_do_plano_sai_da_mensagem_de_recusa() -> None:
+    """A recusa real do serviço: "Free plans do not have access to this season,
+    try from 2022 to 2024." O intervalo dentro dela é cobertura, não ruído."""
+    mensagem = "Free plans do not have access to this season, try from 2022 to 2024."
+    assert _intervalo_do_plano(mensagem) == (2022, 2024)
+
+
+def test_recusa_sem_intervalo_nao_inventa_um() -> None:
+    """Outra recusa real: a do parâmetro `last`, que não traz intervalo nenhum."""
+    assert _intervalo_do_plano("Free plans do not have access to the Last parameter.") is None
+
+
+def test_veredito_conta_temporada_acessivel_e_nao_a_listada() -> None:
+    """`/leagues` lista 17 temporadas do Brasileirão; o plano gratuito serve 3.
+
+    Julgar pela lista contaria histórico que a ingestão não conseguiria baixar — e
+    prometeria no texto do TCC uma cobertura que não existe.
+    """
+    relatorio = _sondagem(list(range(2010, 2027)))
+    relatorio.temporadas_acessiveis = [2022, 2023, 2024]
+    relatorio.restricao_do_plano = "Free plans do not have access to this season"
+
+    veredito = avaliar(relatorio)
+    assert veredito.cobre_brasileirao
+    assert any("3 temporadas acessíveis" in motivo for motivo in veredito.motivos)
+    assert any("2022 a 2024" in motivo for motivo in veredito.motivos)
+
+
+def test_janela_do_plano_tambem_corta_a_libertadores() -> None:
+    """A restrição vale para a assinatura inteira, não só para a competição sondada."""
+    relatorio = _sondagem([2022, 2023, 2024], temporadas_libertadores=list(range(2018, 2027)))
+    relatorio.temporadas_acessiveis = [2022, 2023, 2024]
+
+    veredito = avaliar(relatorio)
+    assert veredito.cobre_continental
+    assert any("Libertadores: 3 temporadas" in motivo for motivo in veredito.motivos)
+
+
+def test_sem_restricao_conhecida_usa_o_que_foi_listado() -> None:
+    """Num plano sem limite de temporada, listada e acessível são a mesma coisa."""
+    relatorio = _sondagem([2022, 2023, 2024, 2025])
+    veredito = avaliar(relatorio)
+    assert veredito.cobre_brasileirao
+    assert any("4 temporadas" in motivo for motivo in veredito.motivos)
 
 
 def test_sem_chave_a_mensagem_diz_o_que_fazer(monkeypatch: pytest.MonkeyPatch) -> None:

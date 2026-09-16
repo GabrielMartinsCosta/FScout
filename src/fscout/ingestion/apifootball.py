@@ -26,6 +26,7 @@ deveria ter chegado.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -36,7 +37,9 @@ from fscout.config import get_settings
 TEMPO_LIMITE = 30.0
 
 # Teto de requisições que a sondagem se permite. A cota gratuita é de 100 por dia.
-ORCAMENTO = 6
+# Oito, e não seis, porque uma tentativa pode esbarrar em temporada não liberada e
+# precisar de uma segunda com a temporada certa — o erro também custa cota.
+ORCAMENTO = 8
 
 # Grupos de estatística que a camada 2 precisa ter para valer a construção. Sem
 # finalização, passe e duelo não dá para montar métrica de scouting nenhuma — seria uma
@@ -46,6 +49,31 @@ GRUPOS_MINIMOS = frozenset({"shots", "passes", "duels"})
 
 class ChaveAusente(RuntimeError):
     """Sem chave configurada. Erro esperado, com instrução em vez de traço de pilha."""
+
+
+class RestricaoDePlano(RuntimeError):
+    """O plano lista a temporada mas não a serve.
+
+    É a distinção que a sondagem existe para descobrir: `/leagues` devolve todas as
+    temporadas que a competição teve, e não as que a assinatura libera. Descobrir isso
+    tarde significaria escrever a ingestão inteira contra temporadas inacessíveis.
+
+    A mensagem costuma trazer o intervalo permitido ("try from 2022 to 2024"), então ela
+    é aproveitada em vez de descartada — é informação de cobertura disfarçada de erro.
+    """
+
+    def __init__(self, mensagem: str, intervalo: tuple[int, int] | None = None) -> None:
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+        self.intervalo = intervalo
+
+
+def _intervalo_do_plano(mensagem: str) -> tuple[int, int] | None:
+    """Extrai "de 2022 a 2024" da mensagem de restrição, quando ela traz isso."""
+    achado = re.search(r"from\s+(\d{4})\s+to\s+(\d{4})", mensagem, re.IGNORECASE)
+    if not achado:
+        return None
+    return int(achado.group(1)), int(achado.group(2))
 
 
 @dataclass
@@ -75,6 +103,9 @@ class Sondagem:
     requisicoes_usadas: int | None = None
     requisicoes_no_dia: int | None = None
     competicoes: list[Competicao] = field(default_factory=list)
+    # O que a assinatura realmente serve, que não é o que `/leagues` lista.
+    restricao_do_plano: str = ""
+    temporadas_acessiveis: list[int] = field(default_factory=list)
     partida_de_exemplo: str = ""
     # Chaves achatadas ("shots.total", "passes.key") encontradas numa partida real.
     estatisticas_do_jogador: list[str] = field(default_factory=list)
@@ -116,6 +147,9 @@ def _pedir(cliente: httpx.Client, caminho: str, **parametros: Any) -> dict[str, 
     # O serviço responde 200 com os erros no corpo, em vez de usar o status HTTP.
     erros = corpo.get("errors")
     if isinstance(erros, dict) and erros:
+        restricao = erros.get("plan")
+        if restricao:
+            raise RestricaoDePlano(str(restricao), _intervalo_do_plano(str(restricao)))
         raise RuntimeError(f"{caminho}: {erros}")
     return corpo
 
@@ -185,13 +219,49 @@ def sondar() -> Sondagem:
             )
             return relatorio
 
-        alvo = max(serie_a.temporadas)
-        relatorio.temporada_testada = alvo
-
         # A prova: uma partida real, e as estatísticas de um jogador real dentro dela.
-        partidas = _pedir(cliente, "/fixtures", league=serie_a.id, season=alvo, last=1)
-        relatorio.gastas_aqui += 1
-        lista = partidas.get("response", []) or []
+        # `/leagues` lista toda temporada que a competição já teve, e não as que a
+        # assinatura serve. Quando a mais recente é recusada, a própria recusa informa o
+        # intervalo liberado — então ela vira dado em vez de exceção.
+        # Sem `last=1`: o plano gratuito também recusa esse parâmetro. Pedir a temporada
+        # inteira traz mais dado do que o necessário, mas custa a mesma requisição.
+        alvo = max(serie_a.temporadas)
+        try:
+            partidas = _pedir(cliente, "/fixtures", league=serie_a.id, season=alvo)
+            relatorio.gastas_aqui += 1
+            relatorio.temporadas_acessiveis = list(serie_a.temporadas)
+        except RestricaoDePlano as restricao:
+            relatorio.gastas_aqui += 1  # a recusa também consome cota
+            relatorio.restricao_do_plano = restricao.mensagem
+            if restricao.intervalo is None:
+                relatorio.avisos.append(
+                    f"O plano recusou a temporada {alvo} sem dizer quais libera: "
+                    f"{restricao.mensagem}"
+                )
+                return relatorio
+            inicio, fim = restricao.intervalo
+            relatorio.temporadas_acessiveis = [
+                ano for ano in serie_a.temporadas if inicio <= ano <= fim
+            ]
+            if not relatorio.temporadas_acessiveis:
+                relatorio.avisos.append(
+                    f"O plano libera de {inicio} a {fim}, e a competição não tem "
+                    "temporada nesse intervalo."
+                )
+                return relatorio
+            alvo = max(relatorio.temporadas_acessiveis)
+            partidas = _pedir(cliente, "/fixtures", league=serie_a.id, season=alvo)
+            relatorio.gastas_aqui += 1
+
+        relatorio.temporada_testada = alvo
+        todas = partidas.get("response", []) or []
+        # Partida encerrada, e a mais recente delas: jogo não disputado não tem
+        # estatística de jogador, e sondar um jogo vazio não provaria nada.
+        lista = [
+            partida
+            for partida in todas
+            if (((partida.get("fixture") or {}).get("status") or {}).get("short")) == "FT"
+        ] or todas
         if not lista:
             relatorio.avisos.append(
                 f"Nenhuma partida devolvida para a Série A de {alvo}: a temporada "
@@ -199,7 +269,7 @@ def sondar() -> Sondagem:
             )
             return relatorio
 
-        primeira = lista[0]
+        primeira = lista[-1]
         times = primeira.get("teams", {}) or {}
         relatorio.partida_de_exemplo = (
             f"{(times.get('home') or {}).get('name', '?')} x "
@@ -231,9 +301,13 @@ def sondar() -> Sondagem:
                     "ficaria sem o que virar métrica."
                 )
 
-        lesoes = _pedir(cliente, "/injuries", league=serie_a.id, season=alvo)
+        try:
+            lesoes = _pedir(cliente, "/injuries", league=serie_a.id, season=alvo)
+            relatorio.lesoes_encontradas = lesoes.get("results")
+        except RestricaoDePlano as restricao:
+            # Lesão pode ter restrição própria, separada da de partidas.
+            relatorio.avisos.append(f"Lesões fora do plano: {restricao.mensagem}")
         relatorio.gastas_aqui += 1
-        relatorio.lesoes_encontradas = lesoes.get("results")
 
     return relatorio
 
@@ -262,23 +336,48 @@ def avaliar(relatorio: Sondagem, minimo_de_temporadas: int = 2) -> Veredito:
     """
     veredito = Veredito()
 
+    # O que conta é a temporada que a assinatura **serve**, não a que ela lista.
+    # Julgar pela lista contaria histórico que a ingestão não conseguiria baixar.
+    janela = (
+        (min(relatorio.temporadas_acessiveis), max(relatorio.temporadas_acessiveis))
+        if relatorio.temporadas_acessiveis
+        else None
+    )
+
+    def acessiveis(competicao: Competicao | None) -> list[int]:
+        if competicao is None:
+            return []
+        if janela is None:
+            return list(competicao.temporadas)
+        return [ano for ano in competicao.temporadas if janela[0] <= ano <= janela[1]]
+
     serie_a = relatorio.competicao("serie a")
-    if serie_a is None or len(serie_a.temporadas) < minimo_de_temporadas:
-        quantas = len(serie_a.temporadas) if serie_a else 0
+    anos_serie_a = acessiveis(serie_a)
+    if len(anos_serie_a) < minimo_de_temporadas:
         veredito.motivos.append(
-            f"Brasileirão com {quantas} temporada(s) liberada(s), abaixo das "
+            f"Brasileirão com {len(anos_serie_a)} temporada(s) acessível(is), abaixo das "
             f"{minimo_de_temporadas} necessárias para haver histórico."
         )
     else:
         veredito.cobre_brasileirao = True
-        veredito.motivos.append(f"Brasileirão: {serie_a.resumo_de_temporadas}.")
+        veredito.motivos.append(
+            f"Brasileirão: {len(anos_serie_a)} temporadas acessíveis "
+            f"({anos_serie_a[0]} a {anos_serie_a[-1]})."
+        )
 
     libertadores = relatorio.competicao("libertadores")
-    if libertadores and libertadores.temporadas:
+    anos_libertadores = acessiveis(libertadores)
+    if anos_libertadores:
         veredito.cobre_continental = True
-        veredito.motivos.append(f"Libertadores: {libertadores.resumo_de_temporadas}.")
+        veredito.motivos.append(
+            f"Libertadores: {len(anos_libertadores)} temporadas acessíveis "
+            f"({anos_libertadores[0]} a {anos_libertadores[-1]})."
+        )
     else:
-        veredito.motivos.append("Libertadores não liberada no plano.")
+        veredito.motivos.append("Libertadores sem temporada acessível no plano.")
+
+    if relatorio.restricao_do_plano:
+        veredito.motivos.append(f"Restrição declarada pelo plano: {relatorio.restricao_do_plano}")
 
     faltando = GRUPOS_MINIMOS - relatorio.grupos_encontrados
     if relatorio.estatisticas_do_jogador and not faltando:
