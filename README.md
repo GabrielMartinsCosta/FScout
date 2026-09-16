@@ -90,9 +90,17 @@ fscout weather
 # Preenche o código ISO de cada país, que é o que posiciona o mapa-múndi
 fscout paises
 
-# Sonda o que o plano do API-Football cobre (exige FSCOUT_API_FOOTBALL_KEY no .env).
-# Gasta 3 das 100 requisições diárias do plano gratuito e diz se o item compensa.
-fscout api-football
+# Camada de dado agregado: Brasileirão, Libertadores e o resto da Conmebol.
+# Exige FSCOUT_API_FOOTBALL_KEY no .env (nunca no .env.example, que vai para o git).
+fscout api-football sondar          # o que o plano cobre, e se compensa
+fscout api-football baixar          # baixa a temporada, no que couber na cota de hoje
+fscout api-football lesoes          # histórico de lesões da temporada
+
+# O plano gratuito dá 100 requisições/dia e uma temporada tem 380 partidas, então
+# `baixar` leva alguns dias. Rode o mesmo comando amanhã: o cache faz ele continuar
+# de onde parou, sem regastar nada.
+fscout api-football baixar --competicao 71 --temporada 2024
+fscout api-football baixar --requisicoes 20    # teto menor, para poupar cota
 
 # Catálogo de métricas (a tabela de definições operacionais do projeto)
 fscout catalogo

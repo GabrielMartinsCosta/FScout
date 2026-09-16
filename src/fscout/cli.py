@@ -297,6 +297,15 @@ def api(
     uvicorn.run("fscout.api.main:app", host=host, port=port, reload=reload)
 
 
+apifootball_app = typer.Typer(
+    help="Camada de dado agregado: Brasileirão, Libertadores e o resto da Conmebol.",
+    no_args_is_help=True,
+)
+app.add_typer(apifootball_app, name="api-football")
+
+SERIE_A_DO_BRASIL = 71  # id da competição no API-Football
+
+
 def _cobertura_declarada(cobertura: dict[str, object], limite: int = 4) -> str:
     """Lista o que a fonte afirma cobrir, achatando o objeto sem supor o formato."""
     ligados: list[str] = []
@@ -312,9 +321,9 @@ def _cobertura_declarada(cobertura: dict[str, object], limite: int = 4) -> str:
     return f"{mostrados} (+{resto})" if resto > 0 else mostrados
 
 
-@app.command("api-football")
-def api_football() -> None:
-    """Mede o que a camada de dado agregado entregaria, antes de construí-la."""
+@apifootball_app.command("sondar")
+def api_football_sondar() -> None:
+    """Mede o que o plano cobre: competições, temporadas e profundidade da estatística."""
     from fscout.ingestion.apifootball import ChaveAusente, avaliar, sondar
 
     try:
@@ -376,6 +385,99 @@ def api_football() -> None:
         else "a camada de dado agregado NÃO se sustenta"
     )
     console.print(f"\n[{cor}]Veredito: {frase}.[/{cor}]")
+
+
+def _mostrar_progresso(progresso: object, titulo: str, cota_diaria: int) -> None:
+    tabela = Table(title=titulo, show_header=False)
+    tabela.add_row("Partidas encerradas na temporada", str(progresso.partidas_encerradas))
+    tabela.add_row("Já estavam em cache", str(progresso.ja_em_cache))
+    tabela.add_row("Baixadas agora", str(progresso.baixadas_agora))
+    tabela.add_row("Ainda faltam", str(progresso.faltam))
+    tabela.add_row("Requisições gastas", str(progresso.gastas))
+    tabela.add_row("Servidas pelo cache", str(progresso.aproveitadas))
+    tabela.add_row("Progresso", f"{progresso.por_cento:.1f}%")
+    console.print(tabela)
+
+    for aviso in progresso.avisos:
+        console.print(f"[yellow]{aviso}[/yellow]")
+
+    if progresso.concluido:
+        console.print("[green]Temporada completa no cache.[/green]")
+    elif progresso.faltam:
+        recado = f"Faltam {progresso.faltam} partidas"
+        # Só estima dias quando a cota diária é conhecida: dividir pelo orçamento de uma
+        # sessão daria um número inventado, e grande.
+        if cota_diaria > 0:
+            recado += f": mais ~{progresso.dias_restantes(cota_diaria)} dia(s) de cota"
+        console.print(f"{recado}. Rode o mesmo comando amanhã — o cache faz ele continuar daqui.")
+
+
+@apifootball_app.command("baixar")
+def api_football_baixar(
+    competicao: Annotated[int, typer.Option(help="Id da competição.")] = SERIE_A_DO_BRASIL,
+    temporada: Annotated[int, typer.Option(help="Ano da temporada.")] = 2024,
+    requisicoes: Annotated[
+        int, typer.Option(help="Teto de requisições. 0 pergunta à conta quanto ainda cabe.")
+    ] = 0,
+) -> None:
+    """Baixa as estatísticas por jogador de cada partida, em sessões diárias.
+
+    Uma temporada do Brasileirão tem 380 partidas e o plano gratuito dá 100 requisições
+    por dia, então a carga leva alguns dias. Rodar de novo continua de onde parou: o que
+    já está em cache não é pedido outra vez.
+    """
+    from fscout.ingestion.apifootball import ChaveAusente, baixar_partidas, orcamento_do_dia
+
+    try:
+        if requisicoes > 0:
+            orcamento, cota_diaria = requisicoes, 0
+        else:
+            orcamento, cota_diaria = orcamento_do_dia()
+        if orcamento <= 0:
+            console.print(
+                "[yellow]A cota de hoje acabou. O que já veio está em cache; "
+                "rode de novo amanhã.[/yellow]"
+            )
+            raise typer.Exit(code=0)
+        console.print(f"Orçamento desta sessão: {orcamento} requisições.")
+        with console.status(f"Baixando {competicao}/{temporada}"):
+            progresso = baixar_partidas(competicao, temporada, orcamento)
+    except ChaveAusente as erro:
+        console.print(f"[yellow]{erro}[/yellow]")
+        raise typer.Exit(code=1) from erro
+
+    _mostrar_progresso(progresso, f"Competição {competicao}, temporada {temporada}", cota_diaria)
+
+
+@apifootball_app.command("lesoes")
+def api_football_lesoes(
+    competicao: Annotated[int, typer.Option(help="Id da competição.")] = SERIE_A_DO_BRASIL,
+    temporada: Annotated[int, typer.Option(help="Ano da temporada.")] = 2024,
+    requisicoes: Annotated[
+        int, typer.Option(help="Teto de requisições. 0 pergunta à conta quanto ainda cabe.")
+    ] = 0,
+) -> None:
+    """Baixa o histórico de lesões da temporada, que vem paginado."""
+    from fscout.ingestion.apifootball import ChaveAusente, baixar_lesoes, orcamento_do_dia
+
+    try:
+        orcamento = requisicoes if requisicoes > 0 else orcamento_do_dia()[0]
+        if orcamento <= 0:
+            console.print("[yellow]A cota de hoje acabou. Rode de novo amanhã.[/yellow]")
+            raise typer.Exit(code=0)
+        with console.status(f"Baixando lesões de {competicao}/{temporada}"):
+            progresso = baixar_lesoes(competicao, temporada, orcamento)
+    except ChaveAusente as erro:
+        console.print(f"[yellow]{erro}[/yellow]")
+        raise typer.Exit(code=1) from erro
+
+    console.print(
+        f"Lesões declaradas: {progresso.partidas_encerradas} · "
+        f"baixadas: {progresso.baixadas_agora} · faltam: {progresso.faltam} · "
+        f"requisições gastas: {progresso.gastas}"
+    )
+    for aviso in progresso.avisos:
+        console.print(f"[yellow]{aviso}[/yellow]")
 
 
 @app.command()

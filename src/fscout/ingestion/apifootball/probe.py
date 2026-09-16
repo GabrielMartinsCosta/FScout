@@ -1,84 +1,41 @@
-"""Sondagem do API-Football: medir a camada 2 antes de construí-la.
+"""Sondagem: medir o que o plano cobre antes de construir em cima dele.
 
-Este módulo **não ingere nada**. Ele responde uma pergunta de escopo, e a pergunta mudou
-de tamanho: não é mais "dá para preencher lesões", é "dá para cobrir o futebol
-sul-americano de clubes com profundidade suficiente para a ferramenta valer a pena".
+Esta sondagem já foi executada e decidiu o escopo do projeto. O que ela devolveu, na
+conta gratuita, com sete requisições:
 
-O pano de fundo: não existe dado de evento aberto para Brasileirão e Libertadores. O que
-existe é estatística agregada por jogador e por partida. A ferramenta já calcula 108
-métricas como consultas sobre eventos, e essa camada não tem como ser alimentada aqui.
-Então a decisão real é se a camada agregada entrega o bastante para justificar uma
-segunda via de dados, com a regra de nunca comparar as duas em silêncio.
+- Brasileirão Série A, Libertadores e as Séries B, C e D, com **2022 a 2024** acessíveis;
+- **33 estatísticas por jogador e por partida**, em onze grupos;
+- 1.668 registros de lesão só no Brasileirão de 2024.
 
-Essa decisão não se toma por impressão. A sondagem gasta seis requisições das cem
-diárias e traz três coisas:
+E o que ela **não** achou, que é igualmente decisivo: nenhuma coordenada, nenhum xG,
+nenhum pé usado, nenhum comprimento de passe. Essa é a fronteira entre as duas camadas
+de dado do projeto — a agregada alimenta métrica, mas não alimenta mapa de campo.
 
-1. **Quais competições sul-americanas o plano libera**, e com quantas temporadas.
-2. **O que a própria fonte declara cobrir** de cada temporada (o objeto `coverage`).
-3. **Uma partida real de exemplo**, com as estatísticas de um jogador de verdade — porque
-   bandeira de cobertura é promessa e amostra é prova.
-
-Nada aqui assume o formato da resposta. A documentação do serviço bloqueia leitura
-automatizada, então os campos são lidos com `.get`, o que vier é achatado e relatado como
-chegou, e o que faltar aparece como ausente. Prefiro relatar o que chegou a afirmar o que
-deveria ter chegado.
+O código continua aqui porque a sondagem é reexecutável e barata (o cache a torna
+gratuita a partir da segunda vez), e porque o critério de decisão escrito em `avaliar`
+é o que justifica, no texto do TCC, ter construído a camada agregada.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
+from fscout.ingestion.apifootball.client import ClienteApiFootball, RestricaoDePlano
 
-from fscout.config import get_settings
-
-TEMPO_LIMITE = 30.0
-
-# Teto de requisições que a sondagem se permite. A cota gratuita é de 100 por dia.
-# Oito, e não seis, porque uma tentativa pode esbarrar em temporada não liberada e
-# precisar de uma segunda com a temporada certa — o erro também custa cota.
+# Teto de requisições da sondagem. Oito, e não seis, porque uma tentativa pode esbarrar
+# em temporada não liberada e precisar de outra — a recusa também custa cota.
 ORCAMENTO = 8
 
-# Grupos de estatística que a camada 2 precisa ter para valer a construção. Sem
-# finalização, passe e duelo não dá para montar métrica de scouting nenhuma — seria uma
-# tabela de gols e cartões, que qualquer site já mostra.
+# Grupos de estatística que a camada agregada precisa ter para valer a construção. Sem
+# finalização, passe e duelo sobra uma tabela de gols e cartões, que qualquer site já
+# mostra e não é ferramenta de scouting.
 GRUPOS_MINIMOS = frozenset({"shots", "passes", "duels"})
-
-
-class ChaveAusente(RuntimeError):
-    """Sem chave configurada. Erro esperado, com instrução em vez de traço de pilha."""
-
-
-class RestricaoDePlano(RuntimeError):
-    """O plano lista a temporada mas não a serve.
-
-    É a distinção que a sondagem existe para descobrir: `/leagues` devolve todas as
-    temporadas que a competição teve, e não as que a assinatura libera. Descobrir isso
-    tarde significaria escrever a ingestão inteira contra temporadas inacessíveis.
-
-    A mensagem costuma trazer o intervalo permitido ("try from 2022 to 2024"), então ela
-    é aproveitada em vez de descartada — é informação de cobertura disfarçada de erro.
-    """
-
-    def __init__(self, mensagem: str, intervalo: tuple[int, int] | None = None) -> None:
-        super().__init__(mensagem)
-        self.mensagem = mensagem
-        self.intervalo = intervalo
-
-
-def _intervalo_do_plano(mensagem: str) -> tuple[int, int] | None:
-    """Extrai "de 2022 a 2024" da mensagem de restrição, quando ela traz isso."""
-    achado = re.search(r"from\s+(\d{4})\s+to\s+(\d{4})", mensagem, re.IGNORECASE)
-    if not achado:
-        return None
-    return int(achado.group(1)), int(achado.group(2))
 
 
 @dataclass
 class Competicao:
-    """Uma competição liberada pelo plano, com o que a fonte declara cobrir."""
+    """Uma competição devolvida pelo plano, com o que a fonte declara cobrir."""
 
     id: int | None = None
     nome: str = ""
@@ -125,36 +82,8 @@ class Sondagem:
         return None
 
 
-def _cliente() -> httpx.Client:
-    chave = get_settings().api_football_key
-    if not chave:
-        raise ChaveAusente(
-            "FSCOUT_API_FOOTBALL_KEY não está configurada. Crie a conta em "
-            "dashboard.api-football.com e escreva a chave no arquivo .env, na raiz do "
-            "projeto: FSCOUT_API_FOOTBALL_KEY=sua_chave"
-        )
-    return httpx.Client(
-        base_url=get_settings().api_football_base_url,
-        headers={"x-apisports-key": chave},
-        timeout=TEMPO_LIMITE,
-    )
-
-
-def _pedir(cliente: httpx.Client, caminho: str, **parametros: Any) -> dict[str, Any]:
-    resposta = cliente.get(caminho, params=parametros)
-    resposta.raise_for_status()
-    corpo = resposta.json()
-    # O serviço responde 200 com os erros no corpo, em vez de usar o status HTTP.
-    erros = corpo.get("errors")
-    if isinstance(erros, dict) and erros:
-        restricao = erros.get("plan")
-        if restricao:
-            raise RestricaoDePlano(str(restricao), _intervalo_do_plano(str(restricao)))
-        raise RuntimeError(f"{caminho}: {erros}")
-    return corpo
-
-
-def _competicoes_de(corpo: dict[str, Any]) -> list[Competicao]:
+def competicoes_de(corpo: dict[str, Any]) -> list[Competicao]:
+    """Lê a resposta de `/leagues` sem supor o formato dela."""
     encontradas = []
     for item in corpo.get("response", []) or []:
         dados = item.get("league", {}) or {}
@@ -179,7 +108,7 @@ def _competicoes_de(corpo: dict[str, Any]) -> list[Competicao]:
     return encontradas
 
 
-def _achatar(estatisticas: dict[str, Any]) -> list[str]:
+def achatar(estatisticas: dict[str, Any]) -> list[str]:
     """Transforma {"shots": {"total": 3}} em ["shots.total"], sem supor o formato."""
     chaves = []
     for grupo, campos in estatisticas.items():
@@ -190,54 +119,58 @@ def _achatar(estatisticas: dict[str, Any]) -> list[str]:
     return sorted(chaves)
 
 
-def sondar() -> Sondagem:
-    """Consulta o mínimo necessário para decidir se a camada 2 se sustenta."""
+def partidas_encerradas(corpo: dict[str, Any]) -> list[dict[str, Any]]:
+    """Só os jogos já disputados.
+
+    Jogo não realizado não tem estatística de jogador, e sondar um jogo vazio não
+    provaria nada sobre a profundidade da fonte.
+    """
+    todas = corpo.get("response", []) or []
+    return [
+        partida
+        for partida in todas
+        if (((partida.get("fixture") or {}).get("status") or {}).get("short")) == "FT"
+    ]
+
+
+def sondar(orcamento: int = ORCAMENTO) -> Sondagem:
+    """Consulta o mínimo necessário para decidir se a camada agregada se sustenta."""
     relatorio = Sondagem()
-    with _cliente() as cliente:
-        estado = _pedir(cliente, "/status")
-        relatorio.gastas_aqui += 1
-        conta = estado.get("response", {}) or {}
+    with ClienteApiFootball(orcamento=orcamento) as cliente:
+        conta = (cliente.obter("status", cachear=False).get("response") or {}) or {}
         assinatura = conta.get("subscription", {}) or {}
         requisicoes = conta.get("requests", {}) or {}
         relatorio.plano = str(assinatura.get("plan", "desconhecido"))
         relatorio.requisicoes_usadas = requisicoes.get("current")
         relatorio.requisicoes_no_dia = requisicoes.get("limit_day")
 
-        # Brasileirão e as copas continentais. "CONMEBOL" traz Libertadores e
-        # Sudamericana numa consulta só, em vez de duas.
-        relatorio.competicoes.extend(_competicoes_de(_pedir(cliente, "/leagues", country="Brazil")))
-        relatorio.gastas_aqui += 1
-        relatorio.competicoes.extend(
-            _competicoes_de(_pedir(cliente, "/leagues", search="CONMEBOL"))
-        )
-        relatorio.gastas_aqui += 1
+        # "CONMEBOL" traz Libertadores e Sudamericana numa consulta só, em vez de duas.
+        relatorio.competicoes.extend(competicoes_de(cliente.obter("leagues", country="Brazil")))
+        relatorio.competicoes.extend(competicoes_de(cliente.obter("leagues", search="CONMEBOL")))
 
         serie_a = relatorio.competicao("serie a")
         if serie_a is None or not serie_a.temporadas:
             relatorio.avisos.append(
                 "O plano não devolveu a Série A do Brasil com temporadas liberadas."
             )
+            relatorio.gastas_aqui = cliente.gastas
             return relatorio
 
-        # A prova: uma partida real, e as estatísticas de um jogador real dentro dela.
         # `/leagues` lista toda temporada que a competição já teve, e não as que a
         # assinatura serve. Quando a mais recente é recusada, a própria recusa informa o
         # intervalo liberado — então ela vira dado em vez de exceção.
-        # Sem `last=1`: o plano gratuito também recusa esse parâmetro. Pedir a temporada
-        # inteira traz mais dado do que o necessário, mas custa a mesma requisição.
         alvo = max(serie_a.temporadas)
         try:
-            partidas = _pedir(cliente, "/fixtures", league=serie_a.id, season=alvo)
-            relatorio.gastas_aqui += 1
+            partidas = cliente.obter("fixtures", league=serie_a.id, season=alvo)
             relatorio.temporadas_acessiveis = list(serie_a.temporadas)
         except RestricaoDePlano as restricao:
-            relatorio.gastas_aqui += 1  # a recusa também consome cota
             relatorio.restricao_do_plano = restricao.mensagem
             if restricao.intervalo is None:
                 relatorio.avisos.append(
                     f"O plano recusou a temporada {alvo} sem dizer quais libera: "
                     f"{restricao.mensagem}"
                 )
+                relatorio.gastas_aqui = cliente.gastas
                 return relatorio
             inicio, fim = restricao.intervalo
             relatorio.temporadas_acessiveis = [
@@ -248,38 +181,31 @@ def sondar() -> Sondagem:
                     f"O plano libera de {inicio} a {fim}, e a competição não tem "
                     "temporada nesse intervalo."
                 )
+                relatorio.gastas_aqui = cliente.gastas
                 return relatorio
             alvo = max(relatorio.temporadas_acessiveis)
-            partidas = _pedir(cliente, "/fixtures", league=serie_a.id, season=alvo)
-            relatorio.gastas_aqui += 1
+            partidas = cliente.obter("fixtures", league=serie_a.id, season=alvo)
 
         relatorio.temporada_testada = alvo
-        todas = partidas.get("response", []) or []
-        # Partida encerrada, e a mais recente delas: jogo não disputado não tem
-        # estatística de jogador, e sondar um jogo vazio não provaria nada.
-        lista = [
-            partida
-            for partida in todas
-            if (((partida.get("fixture") or {}).get("status") or {}).get("short")) == "FT"
-        ] or todas
-        if not lista:
+        encerradas = partidas_encerradas(partidas) or (partidas.get("response") or [])
+        if not encerradas:
             relatorio.avisos.append(
                 f"Nenhuma partida devolvida para a Série A de {alvo}: a temporada "
                 "aparece liberada mas vem vazia."
             )
+            relatorio.gastas_aqui = cliente.gastas
             return relatorio
 
-        primeira = lista[-1]
-        times = primeira.get("teams", {}) or {}
+        ultima = encerradas[-1]
+        times = ultima.get("teams", {}) or {}
         relatorio.partida_de_exemplo = (
             f"{(times.get('home') or {}).get('name', '?')} x "
             f"{(times.get('away') or {}).get('name', '?')}"
         )
-        fixture_id = (primeira.get("fixture", {}) or {}).get("id")
+        fixture_id = (ultima.get("fixture", {}) or {}).get("id")
 
         if fixture_id is not None:
-            jogadores = _pedir(cliente, "/fixtures/players", fixture=fixture_id)
-            relatorio.gastas_aqui += 1
+            jogadores = cliente.obter("fixtures/players", fixture=fixture_id)
             for time in jogadores.get("response", []) or []:
                 for entrada in time.get("players", []) or []:
                     estatisticas = entrada.get("statistics") or []
@@ -288,7 +214,7 @@ def sondar() -> Sondagem:
                     relatorio.jogador_de_exemplo = str(
                         (entrada.get("player", {}) or {}).get("name", "")
                     )
-                    relatorio.estatisticas_do_jogador = _achatar(estatisticas[0])
+                    relatorio.estatisticas_do_jogador = achatar(estatisticas[0])
                     relatorio.grupos_encontrados = {
                         chave.split(".", 1)[0] for chave in relatorio.estatisticas_do_jogador
                     }
@@ -302,12 +228,12 @@ def sondar() -> Sondagem:
                 )
 
         try:
-            lesoes = _pedir(cliente, "/injuries", league=serie_a.id, season=alvo)
+            lesoes = cliente.obter("injuries", league=serie_a.id, season=alvo)
             relatorio.lesoes_encontradas = lesoes.get("results")
         except RestricaoDePlano as restricao:
-            # Lesão pode ter restrição própria, separada da de partidas.
             relatorio.avisos.append(f"Lesões fora do plano: {restricao.mensagem}")
-        relatorio.gastas_aqui += 1
+
+        relatorio.gastas_aqui = cliente.gastas
 
     return relatorio
 
@@ -324,15 +250,15 @@ class Veredito:
 
     @property
     def vale_a_camada_2(self) -> bool:
-        """A camada 2 só se justifica com competição **e** estatística que vire métrica."""
+        """A camada só se justifica com competição **e** estatística que vire métrica."""
         return self.cobre_brasileirao and self.tem_estatistica_util
 
 
 def avaliar(relatorio: Sondagem, minimo_de_temporadas: int = 2) -> Veredito:
     """Julga a sondagem por critérios escritos, em vez de impressão de quem olhou.
 
-    É este julgamento que justifica, no texto do TCC, ter feito ou não a camada de
-    dado agregado — e, se não, por quê.
+    É este julgamento que justifica, no texto do TCC, ter feito ou não a camada de dado
+    agregado — e, se não, por quê.
     """
     veredito = Veredito()
 
@@ -351,8 +277,7 @@ def avaliar(relatorio: Sondagem, minimo_de_temporadas: int = 2) -> Veredito:
             return list(competicao.temporadas)
         return [ano for ano in competicao.temporadas if janela[0] <= ano <= janela[1]]
 
-    serie_a = relatorio.competicao("serie a")
-    anos_serie_a = acessiveis(serie_a)
+    anos_serie_a = acessiveis(relatorio.competicao("serie a"))
     if len(anos_serie_a) < minimo_de_temporadas:
         veredito.motivos.append(
             f"Brasileirão com {len(anos_serie_a)} temporada(s) acessível(is), abaixo das "
@@ -365,8 +290,7 @@ def avaliar(relatorio: Sondagem, minimo_de_temporadas: int = 2) -> Veredito:
             f"({anos_serie_a[0]} a {anos_serie_a[-1]})."
         )
 
-    libertadores = relatorio.competicao("libertadores")
-    anos_libertadores = acessiveis(libertadores)
+    anos_libertadores = acessiveis(relatorio.competicao("libertadores"))
     if anos_libertadores:
         veredito.cobre_continental = True
         veredito.motivos.append(
