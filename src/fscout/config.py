@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # ele mostra passa pelos mesmos endpoints documentados em /docs.
     api_url: str = "http://127.0.0.1:8000"
     statsbomb_base_url: str = "https://raw.githubusercontent.com/statsbomb/open-data/master/data"
+    # API-Football. A chave vem do .env e nunca do codigo: e credencial pessoal, com cota
+    # diaria propria. Vazia significa "nao configurada", e a sondagem avisa em vez de falhar.
+    api_football_key: str = ""
+    api_football_base_url: str = "https://v3.football.api-sports.io"
     transfermarkt_base_url: str = "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data"
     raw_dir: Path = PROJECT_ROOT / "data" / "raw"
     processed_dir: Path = PROJECT_ROOT / "data" / "processed"

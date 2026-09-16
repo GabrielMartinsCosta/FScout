@@ -297,6 +297,51 @@ def api(
     uvicorn.run("fscout.api.main:app", host=host, port=port, reload=reload)
 
 
+@app.command("api-football")
+def api_football() -> None:
+    """Sonda o que o plano do API-Football cobre, antes de escrever o adaptador."""
+    from fscout.ingestion.apifootball import ChaveAusente, sondar, vale_a_pena
+
+    try:
+        with console.status("Consultando o API-Football (gasta poucas requisições)"):
+            relatorio = sondar()
+    except ChaveAusente as erro:
+        console.print(f"[yellow]{erro}[/yellow]")
+        raise typer.Exit(code=1) from erro
+
+    conta = Table(title="Conta", show_header=False)
+    conta.add_row("Plano", relatorio.plano)
+    conta.add_row(
+        "Requisições hoje",
+        f"{relatorio.requisicoes_usadas} de {relatorio.requisicoes_no_dia}",
+    )
+    conta.add_row("Gastas nesta sondagem", str(relatorio.gastas_aqui))
+    console.print(conta)
+
+    if relatorio.ligas_do_brasil:
+        ligas = Table(title="Competições do Brasil liberadas")
+        for coluna in ("id", "competição", "tipo", "temporadas"):
+            ligas.add_column(coluna)
+        for liga in relatorio.ligas_do_brasil:
+            anos = liga["temporadas"]
+            resumo = f"{len(anos)}: de {anos[0]} a {anos[-1]}" if anos else "nenhuma"
+            ligas.add_row(str(liga["id"]), str(liga["nome"]), str(liga["tipo"]), resumo)
+        console.print(ligas)
+
+    if relatorio.temporada_testada is not None:
+        console.print(
+            f"Lesões na temporada {relatorio.temporada_testada}: "
+            f"{relatorio.lesoes_encontradas} registros"
+        )
+    for aviso in relatorio.avisos:
+        console.print(f"[yellow]{aviso}[/yellow]")
+
+    viavel, motivo = vale_a_pena(relatorio)
+    cor = "green" if viavel else "yellow"
+    veredito = "vale a pena seguir" if viavel else "não compensa"
+    console.print(f"[{cor}]Veredito: {veredito}[/{cor}] — {motivo}.")
+
+
 @app.command()
 def paises() -> None:
     """Preenche o código ISO de cada país, que é o que posiciona o mapa-múndi."""

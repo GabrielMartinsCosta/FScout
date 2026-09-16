@@ -90,6 +90,10 @@ fscout weather
 # Preenche o código ISO de cada país, que é o que posiciona o mapa-múndi
 fscout paises
 
+# Sonda o que o plano do API-Football cobre (exige FSCOUT_API_FOOTBALL_KEY no .env).
+# Gasta 3 das 100 requisições diárias do plano gratuito e diz se o item compensa.
+fscout api-football
+
 # Catálogo de métricas (a tabela de definições operacionais do projeto)
 fscout catalogo
 fscout catalogo finalizacao
