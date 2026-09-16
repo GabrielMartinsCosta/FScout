@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>FScout — Relatório de andamento</title>
+<style>
+  @page { size: A4; margin: 1.5cm 1.8cm; }
+  :root { --tinta: #16181d; --suave: #5b6270; --linha: #d8dce3; --destaque: #0f4c81; --alerta: #8a4b08; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--tinta); background: #fff;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10pt; line-height: 1.42;
+  }
+  header { border-bottom: 2px solid var(--destaque); padding-bottom: 8px; margin-bottom: 14px; }
+  .rotulo { font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; color: var(--destaque); font-weight: 600; }
+  h1 { font-size: 17pt; margin: 6px 0 4px; line-height: 1.25; }
+  .subtitulo { color: var(--suave); font-size: 10.5pt; margin: 0; }
+  .autoria { margin-top: 10px; font-size: 9.5pt; color: var(--suave); }
+  h2 {
+    font-size: 10.5pt; margin: 12px 0 4px; padding-bottom: 3px;
+    border-bottom: 1px solid var(--linha); color: var(--destaque);
+  }
+  h3 { font-size: 10pt; margin: 9px 0 3px; color: var(--tinta); }
+  p { margin: 0 0 6px; text-align: justify; }
+  ul { margin: 0 0 8px; padding-left: 18px; }
+  li { margin-bottom: 3px; }
+  strong { font-weight: 600; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9pt; }
+  table { width: 100%; border-collapse: collapse; margin: 5px 0 8px; font-size: 9.5pt; }
+  th, td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+  th { color: var(--suave); font-weight: 600; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .04em; }
+  td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .caixa { background: #f5f7fa; border-left: 3px solid var(--destaque); padding: 9px 12px; margin: 10px 0; }
+  .caixa.atencao { background: #fdf6ee; border-left-color: var(--alerta); }
+  .caixa p:last-child { margin-bottom: 0; }
+  footer { margin-top: 12px; padding-top: 6px; border-top: 1px solid var(--linha); font-size: 8.5pt; color: var(--suave); }
+  .quebra { page-break-before: always; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="rotulo">Trabalho de Conclusão de Curso &nbsp;·&nbsp; Relatório de andamento</div>
+  <h1>FScout: os passos da construção, o que já se verifica e o que ficou declarado como limite</h1>
+  <p class="subtitulo">Do modelo de dados à interface, com as decisões de método que sustentam cada número.</p>
+  <p class="autoria">Gabriel Martins &nbsp;·&nbsp; 16 de setembro de 2026 &nbsp;·&nbsp; protótipo funcional, seis fases concluídas</p>
+</header>
+
+<h2>1. O que foi construído</h2>
+<p>
+  Uma ferramenta de scouting completa, da ingestão à tela: <strong>661.915 eventos</strong> de
+  <strong>182 partidas</strong>, <strong>1.984 atletas</strong>, <strong>108 métricas</strong> em sete
+  famílias, uma API HTTP e um painel com oito visualizações. O código tem
+  <strong>322 testes</strong> automatizados e um registro com 34 decisões de projeto documentadas.
+</p>
+<div class="caixa">
+  <p>
+    <strong>A decisão que sustenta o trabalho:</strong> estatística derivada é <em>consulta</em>, não
+    <em>coluna</em>. O banco guarda o que aconteceu em campo — uma linha por ação, com qualificadores
+    e coordenadas — e cada métrica é um filtro declarado sobre isso. "Gol de perna esquerda, de fora
+    da área, em jogada iniciada em escanteio" são quatro condições indexadas sobre a mesma tabela,
+    sem coluna nova e sem reprocessamento.
+  </p>
+  <p>
+    A consequência prática é que acrescentar uma estatística virou um registro de cinco linhas. O
+    catálogo, exportado, <strong>é</strong> a tabela de definições operacionais da metodologia.
+  </p>
+</div>
+
+<h2>2. Os passos, e o que cada um entregou</h2>
+<table>
+  <tr>
+    <th>Fase</th><th>Entrega</th><th>Evidência de que funciona</th>
+  </tr>
+  <tr>
+    <td>0. Fundação</td>
+    <td>Vocabulário do futebol, geometria do campo, schema de 22 tabelas</td>
+    <td>33 testes de geometria aferidos contra medidas oficiais da IFAB (gol de 7,32 m, travessão a 2,44 m, pênalti a 10,97 m)</td>
+  </tr>
+  <tr>
+    <td>1. Ingestão</td>
+    <td>Adaptador StatsBomb evento a evento, com tradução explícita do vocabulário</td>
+    <td>Placar reconstruído a partir dos eventos confere em 182 de 182 partidas; nenhum valor da fonte ficou fora do vocabulário</td>
+  </tr>
+  <tr>
+    <td>1b. Combinação de fontes</td>
+    <td>Ficha do atleta, valor de mercado e contrato (Transfermarkt); estádio geocodificado e clima de cada partida</td>
+    <td>Ligação de registros com <strong>98,6% de precisão</strong> (633 de 642), medida contra um gabarito independente; 51 casos recusados e documentados</td>
+  </tr>
+  <tr>
+    <td>2. Motor de métricas</td>
+    <td>Catálogo declarativo, normalização por 90 minutos, percentil por grupo de posição</td>
+    <td>Artilheiro, líder de assistências e líder de gols evitados da Copa América coincidem com os registros oficiais</td>
+  </tr>
+  <tr>
+    <td>3. API</td>
+    <td>Contrato HTTP; todo endpoint aceita o mesmo conjunto de recortes</td>
+    <td>"Gols em junho" e "gols contra determinado adversário" são a mesma chamada com argumentos diferentes</td>
+  </tr>
+  <tr>
+    <td>4. Visualização</td>
+    <td>Perfil, mapa de chutes, de passes, de calor, boca do gol, radar, tabela comparativa e mapa-múndi</td>
+    <td>As 11 finalizações de Lautaro Martínez na Copa América saem no mapa como 5 gols — a artilharia oficial do torneio</td>
+  </tr>
+</table>
+
+<h3>Um princípio de método que atravessa todas as fases</h3>
+<p>
+  Cada carga foi conferida contra um <strong>fato externo verificável</strong>, e não contra o próprio
+  sistema. Três defeitos só apareceram por causa disso, e nenhum deles teria sido pego por teste
+  sintético: Messi somava 207 minutos numa final de 120 (a escalação da fonte traz intervalos
+  invertidos e sobrepostos); um estádio do Texas foi geocodificado na Virgínia (a busca por nome
+  encontra bairros chamados "Stadium"); e um rodapé anunciava 192 passes progressivos ao lado de um
+  cartão que dizia 108 — nenhum dos dois estava errado, mas um contava tentativas e o outro,
+  acertos.
+</p>
+
+<div class="quebra"></div>
+
+<h2>3. De quando são os dados</h2>
+<p>
+  Esta é uma limitação estrutural do trabalho e precisa estar declarada com números.
+</p>
+<table>
+  <tr>
+    <th>Competição</th><th>Temporada</th><th class="num">Partidas</th><th>Período</th><th class="num">Idade</th>
+  </tr>
+  <tr><td>La Liga</td><td>2020/21</td><td class="num">35</td><td>27/09/2020 a 16/05/2021</td><td class="num">64 meses</td></tr>
+  <tr><td>Copa do Mundo FIFA</td><td>2022</td><td class="num">64</td><td>20/11 a 18/12/2022</td><td class="num">45 meses</td></tr>
+  <tr><td>Eurocopa</td><td>2024</td><td class="num">51</td><td>14/06 a 14/07/2024</td><td class="num">26 meses</td></tr>
+  <tr><td>Copa América</td><td>2024</td><td class="num">32</td><td>21/06 a 15/07/2024</td><td class="num">26 meses</td></tr>
+</table>
+<p>
+  O dado de evento mais recente do projeto tem <strong>26 meses</strong>. Os dados biográficos são
+  atuais — os valores de mercado vão até junho de 2026 —, mas o que acontece em campo, não.
+</p>
+<div class="caixa atencao">
+  <p>
+    <strong>O atraso não é escolha do projeto, é a fronteira do dado aberto.</strong> O catálogo
+    completo da StatsBomb Open Data tem 80 temporadas, e <strong>apenas uma é de 2025 ou posterior</strong>
+    (Eurocopa Feminina 2025). No API-Football, o plano gratuito libera <strong>2022 a 2024</strong>;
+    temporada corrente exige assinatura paga.
+  </p>
+  <p>
+    A razão é econômica, não técnica: dado de evento é produzido por pessoas assistindo à partida e
+    marcando cada ação, e é vendido sob contrato. Empresas como a Sofascore <em>licenciam</em> esse
+    dado de provedores — não o obtêm de graça. Nenhum trabalho acadêmico sem orçamento reproduz essa
+    cadeia de aquisição.
+  </p>
+</div>
+
+<h2>4. A decisão de escopo: duas camadas de dado</h2>
+<p>
+  Não existe dado de evento aberto para o futebol de clubes sul-americano. Como as 108 métricas são
+  consultas sobre eventos, a cobertura de Brasileirão e Libertadores não pode vir pela mesma via.
+  Para decidir sobre fato, e não sobre impressão, foi escrita uma <strong>sondagem</strong> que mede
+  o que uma fonte de dado agregado entregaria antes de qualquer linha de adaptador ser escrita.
+</p>
+<p>O que ela apurou, gastando sete requisições da cota gratuita:</p>
+<table>
+  <tr><th>Medida</th><th>Resultado</th></tr>
+  <tr><td>Brasileirão Série A (e Séries B, C e D)</td><td>2022 a 2024 acessíveis</td></tr>
+  <tr><td>Libertadores</td><td>2022 a 2024 acessíveis</td></tr>
+  <tr><td>Estatísticas por jogador, por partida</td><td>33 campos em 11 grupos (finalização, passe, duelo, desarme, drible, falta, cartão, pênalti)</td></tr>
+  <tr><td>Registros de lesão (Brasileirão 2024)</td><td>1.668</td></tr>
+  <tr><td>Coordenadas, xG, pé utilizado, comprimento de passe</td><td><strong>ausentes</strong></td></tr>
+</table>
+<p>
+  A última linha é a mais importante: a camada agregada alimenta <em>métrica</em>, mas não alimenta
+  <em>mapa de campo</em>. Daí a regra que governa o uso dela em todo o sistema —
+  <strong>as duas camadas nunca se comparam em silêncio</strong>. O percentil passa a particionar por
+  camada, a comparação recusa cruzar métricas que não existem nas duas, e cada número exibe de onde
+  veio. Sem essa regra, um jogador do Brasileirão apareceria num ranking ao lado de um da La Liga
+  com números calculados de formas diferentes — invalidando justamente o que o trabalho defende.
+</p>
+<p>
+  O critério da decisão está escrito em código e coberto por teste, e não depende da leitura de quem
+  olhou a saída. É ele que justifica, no texto final, ter construído ou não essa camada.
+</p>
+
+<h2>5. O que foi declarado como limite</h2>
+<ul>
+  <li><strong>Distância percorrida, sprints e velocidade</strong> exigem <em>tracking data</em>, que não existe para competições com dados de evento abertos.</li>
+  <li><strong>Velocidade de finalização</strong> não é registrada por nenhuma fonte acessível.</li>
+  <li><strong>Salário</strong> não tem fonte aberta confiável; fim de contrato, sim, e está carregado.</li>
+  <li><strong>Erro de escala de ~4%</strong> em distâncias absolutas: a fonte normaliza todo campo para 120×80 jardas. O erro é sistemático e igual para todos, então não afeta comparações entre atletas.</li>
+  <li><strong>O painel sai em modo claro.</strong> Os degraus de cor do modo escuro estão definidos e verificados, mas os controles não são tematizados sem CSS próprio, e meio-tema é pior que nenhum.</li>
+</ul>
+<p>
+  Duas dessas limitações não são cortes de prazo: são limites de fonte. Apresentá-las como limitação
+  metodológica declarada, com a medida do erro quando ele existe, é mais defensável que omiti-las.
+</p>
+
+<h2>6. Uma nota sobre acessibilidade dos gráficos</h2>
+<p>
+  As cores do painel não foram escolhidas por aparência. O método adotado exige que a segurança para
+  daltonismo seja <em>calculada</em>; como a ferramenta de validação original não roda no ambiente de
+  desenvolvimento, ela foi <strong>reimplementada</strong> preservando o modelo de simulação de
+  Machado, Oliveira &amp; Fernandes (2009) e a definição de distância perceptual em OKLab. A
+  reimplementação reproduz exatamente os valores publicados na referência, o que é a prova de que não
+  se desviou dela.
+</p>
+<p>
+  Desse cálculo saiu uma restrição de projeto: em gráficos nos quais qualquer série pode encostar em
+  qualquer outra — dispersão, bolha, radar — o teto é de <strong>três séries</strong>, porque a quarta
+  reprova o piso de distinguibilidade. É por isso que o mapa de chutes tem três classes de desfecho e
+  o radar recusa o quarto atleta, informando o motivo.
+</p>
+
+<h2>7. O que falta</h2>
+<ul>
+  <li><strong>Camada agregada:</strong> carga do Brasileirão em sessões diárias (a cota gratuita permite cerca de um quarto de temporada por dia), conceito de camada no schema, família de métricas própria e a regra de recusa de comparação.</li>
+  <li><strong>Histórico de lesões:</strong> a tabela existe desde a Fase 0, vazia, esperando a fonte.</li>
+  <li><strong>Consolidação:</strong> roteiro de reprodução do clone à primeira tela, testes de ponta a ponta e a redação de metodologia, resultados e limitações.</li>
+</ul>
+
+<footer>
+  FScout — relatório de andamento · 16 de setembro de 2026 · código, documentação e registro de
+  decisões versionados em repositório público.
+</footer>
+
+</body>
+</html>
