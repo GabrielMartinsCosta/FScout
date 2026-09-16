@@ -298,6 +298,20 @@ def api(
 
 
 @app.command()
+def paises() -> None:
+    """Preenche o código ISO de cada país, que é o que posiciona o mapa-múndi."""
+    from fscout.linking.countries import preencher_iso3
+
+    with Session(get_engine()) as session:
+        preenchidos, sem_codigo = preencher_iso3(session)
+
+    console.print(f"Códigos ISO gravados: {preenchidos}")
+    if sem_codigo:
+        console.print(f"[yellow]Sem código[/yellow] ({len(sem_codigo)}): {', '.join(sem_codigo)}")
+        console.print("Estados extintos ou de sucessão ambígua não entram no mapa-múndi.")
+
+
+@app.command()
 def ui(
     host: Annotated[str, typer.Option(help="Endereço de escuta.")] = "127.0.0.1",
     port: Annotated[int, typer.Option(help="Porta.")] = 8050,

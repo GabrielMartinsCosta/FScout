@@ -401,6 +401,11 @@ modelo de xG próprio, segunda fonte de eventos (Wyscout).
 | 27 | A regra de "qual número exibir" mora num lugar só | O valor na tela tem que ser aquele sobre o qual o percentil foi calculado | Cada tela decidindo por conta própria |
 | 28 | As duas telas ficam montadas; a aba troca a visibilidade | Não obriga a silenciar exceções de callback, que esconderiam erro real | `dcc.Tabs` trocando o conteúdo |
 | 29 | Painel só no modo claro, com o escuro pronto | Os controles do Dash não são tematizados sem CSS próprio | Botão de tema escurecendo só os gráficos |
+| 30 | Recorte de finalização e de passe na linha da tela, não no cartão | Filtro por gráfico faria mapa de chutes e boca do gol mostrarem conjuntos diferentes | Um seletor dentro de cada cartão |
+| 31 | O mapa de passes filtra tentativas; as métricas de mesmo nome contam completas | As marcas são geométricas e valem para a tentativa; num mapa, o passe que se perdeu é o que se quer ver | Alinhar o mapa ao catálogo e esconder o que falhou |
+| 32 | Código ISO gravado em `countries.iso3`, de tabela explícita | Posiciona o mapa sem geocodificar; a coluna já existia para isso | Mapear nome para posição na camada de tela |
+| 33 | Estado extinto de sucessão ambígua fica sem código | Escolher um sucessor plantaria um marcador onde ninguém jogou | Atribuir o sucessor mais provável |
+| 34 | País do adversário, e não do atleta, no mapa-múndi | É a leitura que acompanha a minutagem e responde "contra quem ele produz" | Agregar por nacionalidade do atleta |
 
 ---
 
@@ -444,7 +449,7 @@ FScout/
 │       ├── format.py          Como um número do motor vira texto na tela
 │       ├── pitch.py           Desenho do campo, sob as figuras
 │       ├── app.py             Montagem, abas e callbacks do recorte
-│       ├── figures/           shot_map, heatmap, radar
+│       ├── figures/           shot_map, pass_map, heatmap, goal_mouth, radar, world_map
 │       ├── components/        Cartões de resumo e barra de recortes
 │       └── pages/             perfil, comparar
 ├── scripts/

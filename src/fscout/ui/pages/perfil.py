@@ -25,6 +25,7 @@ from fscout.ui.figures import goal_mouth as figura_da_boca
 from fscout.ui.figures import heatmap as figura_de_calor
 from fscout.ui.figures import pass_map as figura_de_passes
 from fscout.ui.figures import shot_map as figura_de_chutes
+from fscout.ui.figures import world_map as figura_do_mundo
 from fscout.ui.format import TRACO
 from fscout.ui.theme import FONT_FAMILY, Mode, Tokens, tokens
 
@@ -46,6 +47,9 @@ class Ids:
     SUBCONJUNTO_PASSES = "perfil-subconjunto-passes"
     TABELA_PASSES = "perfil-tabela-passes"
     RESUMO_PASSES = "perfil-resumo-passes"
+    MUNDI = "perfil-mundi"
+    TABELA_MUNDI = "perfil-tabela-mundi"
+    RESUMO_MUNDI = "perfil-resumo-mundi"
 
 
 # Recortes de finalização. Ficam na linha de controles da tela, e não dentro de um
@@ -106,6 +110,7 @@ def cartao_de_grafico(
     t: Tokens,
     tabela: Any = None,
     rodape: Any = None,
+    largura: str = "1 1 460px",
 ) -> html.Div:
     """Gráfico com sua tabela equivalente recolhida logo abaixo.
 
@@ -155,7 +160,7 @@ def cartao_de_grafico(
             "borderRadius": "10px",
             "padding": "16px 18px",
             "fontFamily": FONT_FAMILY,
-            "flex": "1 1 460px",
+            "flex": largura,
             "minWidth": "340px",
         },
     )
@@ -280,6 +285,22 @@ def layout(mode: Mode | str = "light") -> html.Div:
                             style={"color": t.muted, "fontSize": "12px", "marginTop": "10px"},
                         ),
                     ),
+                    cartao_de_grafico(
+                        "Mapa-múndi",
+                        "Contra quem o atleta produz. O raio é o volume de gols mais "
+                        "assistências, em escala absoluta; cinza é país enfrentado sem "
+                        "participação.",
+                        dcc.Graph(id=Ids.MUNDI, config={"displayModeBar": False}),
+                        t,
+                        tabela=dash_table.DataTable(
+                            id=Ids.TABELA_MUNDI, sort_action="native", **tiles.estilos_de_tabela(t)
+                        ),
+                        rodape=html.Div(
+                            id=Ids.RESUMO_MUNDI,
+                            style={"color": t.muted, "fontSize": "12px", "marginTop": "10px"},
+                        ),
+                        largura="1 1 100%",
+                    ),
                 ],
                 style={"display": "flex", "flexWrap": "wrap", "gap": "16px", "marginTop": "16px"},
             ),
@@ -358,6 +379,32 @@ def _linhas_de_passes(passes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+COLUNAS_DE_MUNDI = [
+    {"name": "País do adversário", "id": "pais"},
+    {"name": "Partidas", "id": "partidas"},
+    {"name": "Minutos", "id": "minutos"},
+    {"name": "Gols", "id": "gols"},
+    {"name": "Assistências", "id": "assistencias"},
+    {"name": "Participações", "id": "participacoes"},
+]
+
+
+def _linhas_de_mundi(paises: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A tabela lista os países **sem agrupar**: aqui Escócia e País de Gales continuam
+    separados, mesmo dividindo um marcador no mapa."""
+    return [
+        {
+            "pais": pais.get("country", TRACO),
+            "partidas": pais.get("matches", 0),
+            "minutos": pais.get("minutes", 0),
+            "gols": pais.get("goals", 0),
+            "assistencias": pais.get("assists", 0),
+            "participacoes": pais.get("contributions", 0),
+        }
+        for pais in paises
+    ]
+
+
 def _tabela_de_calor(celulas: list[dict[str, Any]]) -> tuple[list[dict], list[dict]]:
     grade = figura_de_calor.matriz(celulas)
     colunas = [{"name": "Faixa", "id": "faixa"}] + [
@@ -406,6 +453,10 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
         Output(Ids.TABELA_PASSES, "columns"),
         Output(Ids.TABELA_PASSES, "data"),
         Output(Ids.RESUMO_PASSES, "children"),
+        Output(Ids.MUNDI, "figure"),
+        Output(Ids.TABELA_MUNDI, "columns"),
+        Output(Ids.TABELA_MUNDI, "data"),
+        Output(Ids.RESUMO_MUNDI, "children"),
         Input(Ids.ATLETA, "value"),
         Input(FiltroIds.ARMAZEM, "data"),
         Input(Ids.SUBCONJUNTO, "value"),
@@ -424,6 +475,7 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
         vazio_calor = figura_de_calor.mapa_de_calor([], mode)
         vazio_boca = figura_da_boca.boca_do_gol([], mode, perspectiva)
         vazio_passes = figura_de_passes.mapa_de_passes([], mode)
+        vazio_mundi = figura_do_mundo.mapa_mundi([], mode)
         colunas_calor, linhas_calor = _tabela_de_calor([])
 
         if not player_id:
@@ -447,6 +499,10 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
                 COLUNAS_DE_PASSES,
                 [],
                 "",
+                vazio_mundi,
+                COLUNAS_DE_MUNDI,
+                [],
+                "",
             )
 
         try:
@@ -454,6 +510,7 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
             chutes = api_client.chutes(player_id, recorte)
             passes = api_client.passes(player_id, recorte)
             celulas = api_client.mapa_de_calor(player_id, recorte)
+            paises = api_client.paises(player_id, recorte)
             chaves = metricas_do_perfil(str(perfil.get("position_group") or ""))
             definicoes = {
                 definicao["key"]: definicao
@@ -477,6 +534,10 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
                 "",
                 vazio_passes,
                 COLUNAS_DE_PASSES,
+                [],
+                "",
+                vazio_mundi,
+                COLUNAS_DE_MUNDI,
                 [],
                 "",
             )
@@ -535,6 +596,24 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
             )
         resumo_passes += "."
 
+        agrupados = figura_do_mundo.agrupar_por_codigo(paises)
+        com_producao = sum(1 for pais in agrupados if pais["contributions"] > 0)
+        resumo_mundi = f"{len(paises)} países enfrentados, {com_producao} com participação em gols"
+        somados = [pais for pais in agrupados if len(pais["nomes"]) > 1]
+        if somados:
+            # Sem dizer isto, o leitor veria um marcador e suporia um país.
+            juntos = "; ".join(pais["rotulo"] for pais in somados)
+            resumo_mundi += (
+                f". Somados num marcador só por dividirem o mesmo Estado soberano: {juntos}"
+            )
+        fora_do_mapa = figura_do_mundo.sem_posicao(paises)
+        if fora_do_mapa:
+            resumo_mundi += (
+                f". Sem posição no mapa, por serem Estados que deixaram de existir: "
+                f"{', '.join(fora_do_mapa)}"
+            )
+        resumo_mundi += "."
+
         colunas_calor, linhas_calor = _tabela_de_calor(celulas)
         return (
             tiles.ficha(perfil, mode),
@@ -552,4 +631,8 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
             COLUNAS_DE_PASSES,
             _linhas_de_passes(passes_escolhidos),
             resumo_passes,
+            figura_do_mundo.mapa_mundi(paises, mode),
+            COLUNAS_DE_MUNDI,
+            _linhas_de_mundi(paises),
+            resumo_mundi,
         )

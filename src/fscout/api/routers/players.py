@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, aliased
 from fscout.api.deps import SessionDep, SliceDep
 from fscout.api.schemas import (
     ClubSpellOut,
+    CountryTallyOut,
     HeatmapCellOut,
     PassOut,
     PlayerProfileOut,
@@ -313,6 +314,86 @@ def player_passes(session: SessionDep, recorte: SliceDep, player_id: int) -> lis
             consulta.order_by(Match.match_date, Event.minute)
         )
     ]
+
+
+@router.get("/{player_id}/countries", summary="Produção por país do adversário")
+def player_countries(
+    session: SessionDep, recorte: SliceDep, player_id: int
+) -> list[CountryTallyOut]:
+    """Gols, assistências, partidas e minutos contra as equipes de cada país.
+
+    **O país é o do adversário, não o do atleta.** A pergunta que isto responde é "contra
+    quem ele produz", e não "de onde ele é" — as duas leituras dariam mapas diferentes, e
+    esta é a que acompanha a minutagem.
+
+    Em competição de seleções o país do adversário é a própria seleção; em liga nacional,
+    todos os adversários compartilham o país da liga, e o mapa concentra tudo num
+    marcador só. Isso não é defeito: é o que o dado diz.
+    """
+
+    def _por_pais(consulta: Select) -> Select:
+        """Liga a consulta ao país do adversário e agrupa por ele."""
+        return _filtrar(
+            _com_contexto(
+                consulta.join(Team, Team.id == Appearance.opponent_team_id).join(
+                    Country, Country.id == Team.country_id
+                )
+            ),
+            recorte,
+        ).group_by(Country.id)
+
+    base = _por_pais(
+        select(
+            Country.id,
+            Country.name,
+            Country.iso3,
+            func.count(func.distinct(Appearance.match_id)),
+            func.sum(Appearance.minutes_played),
+        ).select_from(Appearance)
+    ).where(Appearance.player_id == player_id)
+
+    gols = _por_pais(
+        select(Country.id, func.count())
+        .select_from(Shot)
+        .join(
+            Appearance,
+            (Appearance.match_id == Shot.match_id) & (Appearance.player_id == Shot.player_id),
+        )
+    ).where(
+        Shot.player_id == player_id,
+        Shot.is_goal.is_(True),
+        # Gol de disputa de pênaltis não é gol do atleta.
+        Shot.is_shootout.is_(False),
+    )
+
+    assistencias = _por_pais(
+        select(Country.id, func.count())
+        .select_from(Pass)
+        .join(
+            Appearance,
+            (Appearance.match_id == Pass.match_id) & (Appearance.player_id == Pass.player_id),
+        )
+    ).where(Pass.player_id == player_id, Pass.is_goal_assist.is_(True))
+
+    por_pais = dict(session.execute(gols).all())
+    passes_decisivos = dict(session.execute(assistencias).all())
+
+    saida = []
+    for country_id, nome, iso3, partidas, minutos in session.execute(base):
+        feitos = int(por_pais.get(country_id, 0))
+        dados = int(passes_decisivos.get(country_id, 0))
+        saida.append(
+            CountryTallyOut(
+                country=nome,
+                iso3=iso3,
+                matches=int(partidas or 0),
+                minutes=int(minutos or 0),
+                goals=feitos,
+                assists=dados,
+                contributions=feitos + dados,
+            )
+        )
+    return sorted(saida, key=lambda linha: (-linha.contributions, linha.country))
 
 
 @router.get("/{player_id}/heatmap", summary="Ações por célula do campo, para o mapa de calor")

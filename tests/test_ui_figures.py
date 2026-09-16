@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from fscout.ui import pitch
-from fscout.ui.figures import goal_mouth, heatmap, pass_map, radar, shot_map
+from fscout.ui.figures import goal_mouth, heatmap, pass_map, radar, shot_map, world_map
 
 # ----------------------------------------------------------------------------------------
 # Mapa de chutes
@@ -419,3 +419,87 @@ def test_legenda_traz_a_contagem_de_cada_categoria() -> None:
     passes = [_passe(), _passe(), _passe(is_complete=False)]
     nomes = [traco.name for traco in pass_map.mapa_de_passes(passes).data if traco.mode == "lines"]
     assert nomes == ["Certo (2)", "Errado (1)"]
+
+
+# ----------------------------------------------------------------------------------------
+# Mapa-múndi
+# ----------------------------------------------------------------------------------------
+
+
+def _pais(nome: str, iso3: str | None, gols: int = 0, assist: int = 0, **extra: Any) -> dict:
+    return {
+        "country": nome,
+        "iso3": iso3,
+        "matches": extra.get("matches", 1),
+        "minutes": extra.get("minutes", 90),
+        "goals": gols,
+        "assists": assist,
+        "contributions": gols + assist,
+    }
+
+
+def test_paises_do_mesmo_estado_viram_um_marcador() -> None:
+    """Inglaterra, Escócia e País de Gales dividem o GBR: empilhadas, uma esconde as
+    outras e o leitor veria um número onde há três."""
+    paises = [
+        _pais("England", "GBR", gols=2),
+        _pais("Scotland", "GBR", gols=1),
+        _pais("Wales", "GBR", assist=1),
+    ]
+    agrupados = world_map.agrupar_por_codigo(paises)
+    assert len(agrupados) == 1
+    assert agrupados[0]["contributions"] == 4
+    assert agrupados[0]["rotulo"] == "England / Scotland / Wales"
+
+
+def test_agrupamento_soma_partidas_e_minutos() -> None:
+    paises = [
+        _pais("England", "GBR", matches=2, minutes=180),
+        _pais("Scotland", "GBR", matches=1, minutes=90),
+    ]
+    agrupado = world_map.agrupar_por_codigo(paises)[0]
+    assert agrupado["matches"] == 3
+    assert agrupado["minutes"] == 270
+
+
+def test_pais_sem_codigo_fica_fora_do_mapa_mas_e_nomeado() -> None:
+    """Estado extinto de sucessão ambígua não vira marcador, e a tela diz qual foi."""
+    paises = [_pais("Brazil", "BRA", gols=1), _pais("UdSSR", None, gols=3)]
+    assert len(world_map.agrupar_por_codigo(paises)) == 1
+    assert world_map.sem_posicao(paises) == ["UdSSR"]
+
+
+def test_marcadores_saem_do_maior_para_o_menor() -> None:
+    paises = [_pais("Peru", "PER", gols=2), _pais("Brazil", "BRA", gols=5)]
+    assert [p["rotulo"] for p in world_map.agrupar_por_codigo(paises)] == ["Brazil", "Peru"]
+
+
+def test_quem_so_enfrentou_aparece_em_cinza() -> None:
+    """Sem a série de contexto, "não marcou contra a Alemanha" e "nunca enfrentou a
+    Alemanha" ficariam idênticos: ausentes."""
+    paises = [_pais("Brazil", "BRA", gols=2), _pais("Germany", "DEU")]
+    figura = world_map.mapa_mundi(paises)
+    assert [traco.name for traco in figura.data] == [
+        "Enfrentou, sem participação",
+        "Participação em gols",
+    ]
+    assert figura.data[0].marker.color == world_map.tokens("light").muted
+
+
+def test_raio_usa_escala_absoluta() -> None:
+    """Régua fixa: se ela se ajustasse ao melhor país de cada atleta, dois mapas lado a
+    lado ficariam incomparáveis."""
+    poucos = world_map.mapa_mundi([_pais("Peru", "PER", gols=2)])
+    muitos = world_map.mapa_mundi([_pais("Spain", "ESP", gols=40)])
+    assert poucos.data[0].marker.sizeref == muitos.data[0].marker.sizeref
+    assert poucos.data[0].marker.sizeref == world_map.SIZEREF
+
+
+def test_tamanho_do_marcador_e_a_participacao_em_gols() -> None:
+    paises = [_pais("Spain", "ESP", gols=30, assist=10)]
+    assert list(world_map.mapa_mundi(paises).data[0].marker.size) == [40]
+
+
+def test_mapa_sem_dados_nao_quebra() -> None:
+    figura = world_map.mapa_mundi([])
+    assert not figura.data

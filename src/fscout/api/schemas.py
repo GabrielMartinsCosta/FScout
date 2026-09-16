@@ -191,6 +191,22 @@ class HeatmapCellOut(BaseModel):
     actions: int
 
 
+class CountryTallyOut(BaseModel):
+    """Produção do atleta contra as equipes de um país, base do mapa-múndi.
+
+    `iso3` é o que posiciona o marcador. Vem nulo para Estados que deixaram de existir e
+    cuja sucessão é ambígua; esses aparecem na tabela e não no mapa.
+    """
+
+    country: str
+    iso3: str | None = None
+    matches: int = 0
+    minutes: int = 0
+    goals: int = 0
+    assists: int = 0
+    contributions: int = 0
+
+
 class EvaluateRequest(BaseModel):
     metrics: list[str]
     slice: SliceIn = Field(default_factory=SliceIn)

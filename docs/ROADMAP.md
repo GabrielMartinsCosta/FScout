@@ -159,10 +159,34 @@ funciona" — e ele funciona.
        Exigiu rota nova: `GET /players/{id}/passes` e o `PassOut`
 6. [x] **Tabela comparativa** — N atletas × M métricas, com segundo recorte independente
 7. [x] **Boca do gol** — grade 3×3, nas duas perspectivas, com recorte de pênaltis
-8. [ ] **Mapa-múndi** — marcador por país, raio proporcional a G/A
+8. [x] **Mapa-múndi** — marcador por país do adversário, raio proporcional a G/A
 
-Os itens 1–4 e 6 foram feitos antes do 5 porque o 5 era o único que pedia rota nova, e o
-critério de pronto estava no 6.
+**A Fase 4 saiu inteira, os oito itens.** Os 1–4 e 6 vieram antes do 5 porque o 5 era o
+único que pedia rota nova, e o critério de pronto estava no 6.
+
+O mapa-múndi fechou o pedido que originou o trabalho — abrir a ficha de um atleta e ver
+num mapa onde a produção dele se concentra. Três decisões dele valem registro:
+
+- **O país é o do adversário**, não o do atleta. "Contra quem ele produz" e "de onde ele
+  é" dariam mapas diferentes; a primeira é a que anda junto com a minutagem.
+- **Inglaterra, Escócia e País de Gales são três seleções e um Estado soberano.** Sem
+  agrupar, sairiam três bolhas empilhadas no mesmo ponto e a de cima esconderia as
+  outras. São somadas num marcador rotulado com os três nomes, e a tabela mantém a
+  separação. Conferido com Granit Xhaka na Euro: enfrentou Inglaterra e Escócia, e os
+  cinco países dele viraram quatro marcadores.
+- **Estados extintos de sucessão ambígua ficam sem posição.** Tchecoslováquia, URSS,
+  Iugoslávia e Sérvia e Montenegro aparecem como país de nascimento no Transfermarkt e
+  não existem num mapa atual. Escolher um sucessor plantaria um marcador onde ninguém
+  jogou; eles ficam na tabela, e a tela diz que ficaram de fora. Zaire e Alemanha
+  Oriental são exceção: o território é o mesmo de hoje, sem ambiguidade.
+
+A coluna `countries.iso3` já existia no schema, prevista para isto, e estava vazia.
+`fscout paises` a preenche a partir de uma tabela ISO 3166-1 explícita — 86 dos 91 países
+do banco, com os 5 restantes declarados como sem código.
+
+Conferido contra fatos conhecidos: somando os países, Messi tem **30 gols na La Liga
+2020/21** (o Pichichi daquela temporada) e Lautaro Martínez, **5 na Copa América** (a
+artilharia do torneio).
 
 **Uma divergência encontrada ao conferir o mapa de passes contra o catálogo**, e que vale
 como método: as contagens do mapa e das métricas foram comparadas para Pedri (2.162
@@ -272,11 +296,14 @@ faltante — é assim que se apresenta numa defesa.
 
 ## Próximo passo imediato
 
-**Mapa-múndi** (item 8), o único que resta da Fase 4 — e o exemplo que originou o
-projeto. Precisa de uma rota que agregue gols e assistências por país do adversário, mais
-a decisão de como tratar países que a base de mapas não reconhece como soberanos
-(Inglaterra, Escócia e País de Gales aparecem no banco e não existem como país num mapa
-mundi padrão).
+Fase 5, a consolidação, já que a Fase 4 fechou:
 
-Depois disso, Fase 5: API-Football (lesões e Brasileirão), testes de ponta a ponta,
-roteiro de reprodução e redação.
+1. **Roteiro de reprodução** — do clone à primeira tela. É o que permite a alguém de fora
+   verificar o trabalho, e hoje os passos estão espalhados entre o README e os commits.
+2. **Testes de ponta a ponta** — a cadeia ingestão → métrica → API → figura tem cobertura
+   em cada elo, mas não de uma ponta à outra.
+3. **API-Football** — histórico de lesões e totais do Brasileirão, respeitando a cota
+   diária. É o último item de dados que a especificação pedia e nenhuma fonte atual cobre.
+4. **Redação** — metodologia, resultados e limitações.
+
+O catálogo como anexo de metodologia já sai pronto em `fscout catalogo --csv`.

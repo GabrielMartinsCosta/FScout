@@ -126,6 +126,11 @@ def passes(player_id: int, recorte: Recorte | None = None) -> list[dict[str, Any
     return _pedir("GET", f"/players/{player_id}/passes", params=limpar(recorte))
 
 
+def paises(player_id: int, recorte: Recorte | None = None) -> list[dict[str, Any]]:
+    """Produção contra as equipes de cada país, base do mapa-múndi."""
+    return _pedir("GET", f"/players/{player_id}/countries", params=limpar(recorte))
+
+
 def mapa_de_calor(player_id: int, recorte: Recorte | None = None) -> list[dict[str, Any]]:
     return _pedir("GET", f"/players/{player_id}/heatmap", params=limpar(recorte))
 
