@@ -297,13 +297,28 @@ def api(
     uvicorn.run("fscout.api.main:app", host=host, port=port, reload=reload)
 
 
+def _cobertura_declarada(cobertura: dict[str, object], limite: int = 4) -> str:
+    """Lista o que a fonte afirma cobrir, achatando o objeto sem supor o formato."""
+    ligados: list[str] = []
+    for grupo, valor in cobertura.items():
+        if isinstance(valor, dict):
+            ligados.extend(f"{grupo}.{campo}" for campo, ligado in valor.items() if ligado)
+        elif valor:
+            ligados.append(str(grupo))
+    if not ligados:
+        return "-"
+    mostrados = ", ".join(sorted(ligados)[:limite])
+    resto = len(ligados) - limite
+    return f"{mostrados} (+{resto})" if resto > 0 else mostrados
+
+
 @app.command("api-football")
 def api_football() -> None:
-    """Sonda o que o plano do API-Football cobre, antes de escrever o adaptador."""
-    from fscout.ingestion.apifootball import ChaveAusente, sondar, vale_a_pena
+    """Mede o que a camada de dado agregado entregaria, antes de construí-la."""
+    from fscout.ingestion.apifootball import ChaveAusente, avaliar, sondar
 
     try:
-        with console.status("Consultando o API-Football (gasta poucas requisições)"):
+        with console.status("Consultando o API-Football (gasta seis requisições)"):
             relatorio = sondar()
     except ChaveAusente as erro:
         console.print(f"[yellow]{erro}[/yellow]")
@@ -312,21 +327,35 @@ def api_football() -> None:
     conta = Table(title="Conta", show_header=False)
     conta.add_row("Plano", relatorio.plano)
     conta.add_row(
-        "Requisições hoje",
-        f"{relatorio.requisicoes_usadas} de {relatorio.requisicoes_no_dia}",
+        "Requisições hoje", f"{relatorio.requisicoes_usadas} de {relatorio.requisicoes_no_dia}"
     )
     conta.add_row("Gastas nesta sondagem", str(relatorio.gastas_aqui))
     console.print(conta)
 
-    if relatorio.ligas_do_brasil:
-        ligas = Table(title="Competições do Brasil liberadas")
-        for coluna in ("id", "competição", "tipo", "temporadas"):
+    if relatorio.competicoes:
+        ligas = Table(title="Competições liberadas")
+        for coluna in ("id", "competição", "país", "temporadas", "a fonte declara cobrir"):
             ligas.add_column(coluna)
-        for liga in relatorio.ligas_do_brasil:
-            anos = liga["temporadas"]
-            resumo = f"{len(anos)}: de {anos[0]} a {anos[-1]}" if anos else "nenhuma"
-            ligas.add_row(str(liga["id"]), str(liga["nome"]), str(liga["tipo"]), resumo)
+        for liga in relatorio.competicoes:
+            ligas.add_row(
+                str(liga.id),
+                liga.nome,
+                liga.pais,
+                liga.resumo_de_temporadas,
+                _cobertura_declarada(liga.cobertura),
+            )
         console.print(ligas)
+
+    # A prova: o que veio numa partida de verdade, e não o que a fonte promete cobrir.
+    if relatorio.estatisticas_do_jogador:
+        amostra = Table(
+            title=f"Amostra real — {relatorio.partida_de_exemplo} — {relatorio.jogador_de_exemplo}",
+            show_header=False,
+        )
+        amostra.add_row("Estatísticas por jogador", str(len(relatorio.estatisticas_do_jogador)))
+        amostra.add_row("Grupos", ", ".join(sorted(relatorio.grupos_encontrados)))
+        amostra.add_row("Campos", ", ".join(relatorio.estatisticas_do_jogador))
+        console.print(amostra)
 
     if relatorio.temporada_testada is not None:
         console.print(
@@ -336,10 +365,17 @@ def api_football() -> None:
     for aviso in relatorio.avisos:
         console.print(f"[yellow]{aviso}[/yellow]")
 
-    viavel, motivo = vale_a_pena(relatorio)
-    cor = "green" if viavel else "yellow"
-    veredito = "vale a pena seguir" if viavel else "não compensa"
-    console.print(f"[{cor}]Veredito: {veredito}[/{cor}] — {motivo}.")
+    veredito = avaliar(relatorio)
+    console.print()
+    for motivo in veredito.motivos:
+        console.print(f"  {motivo}")
+    cor = "green" if veredito.vale_a_camada_2 else "yellow"
+    frase = (
+        "a camada de dado agregado se sustenta"
+        if veredito.vale_a_camada_2
+        else "a camada de dado agregado NÃO se sustenta"
+    )
+    console.print(f"\n[{cor}]Veredito: {frase}.[/{cor}]")
 
 
 @app.command()

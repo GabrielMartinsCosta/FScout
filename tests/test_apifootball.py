@@ -1,62 +1,181 @@
 """Testes da sondagem do API-Football.
 
-A sondagem existe para uma decisão de escopo: escrever ou não o adaptador. O critério
-dessa decisão precisa estar escrito e testado, e não ser impressão de quem olhou a saída
-— é ele que justifica, no texto do TCC, ter feito ou não o último item da especificação.
+A sondagem existe para uma decisão de escopo: construir ou não a camada de dado
+agregado, que é o que daria cobertura ao futebol de clubes sul-americano — onde não
+existe dado de evento aberto. O critério dessa decisão precisa estar escrito e testado,
+e não ser impressão de quem olhou a saída: é ele que justifica, no texto do TCC, ter
+feito ou não a cobertura do Brasileirão, e por quê.
 
-Nada aqui toca a rede. O que se testa é o julgamento sobre um relatório já obtido.
+Nada aqui toca a rede. O que se testa é o julgamento sobre um relatório já obtido, e o
+achatamento defensivo das respostas — o serviço bloqueia leitura automatizada da
+documentação, então o código não pode supor o formato do que chega.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from fscout.ingestion.apifootball import ChaveAusente, Sondagem, _cliente, vale_a_pena
+from fscout.ingestion.apifootball import (
+    GRUPOS_MINIMOS,
+    ChaveAusente,
+    Competicao,
+    Sondagem,
+    _achatar,
+    _cliente,
+    _competicoes_de,
+    avaliar,
+)
+
+ESTATISTICAS_COMPLETAS = [
+    "shots.total",
+    "shots.on",
+    "passes.total",
+    "passes.key",
+    "duels.total",
+    "duels.won",
+]
 
 
-def _relatorio(temporadas: list[int], lesoes: int | None = 12) -> Sondagem:
+def _sondagem(
+    temporadas_serie_a: list[int],
+    temporadas_libertadores: list[int] | None = None,
+    estatisticas: list[str] | None = None,
+    lesoes: int | None = 40,
+) -> Sondagem:
+    competicoes = [
+        Competicao(
+            id=71, nome="Serie A", pais="Brazil", tipo="League", temporadas=temporadas_serie_a
+        )
+    ]
+    if temporadas_libertadores:
+        competicoes.append(
+            Competicao(
+                id=13,
+                nome="CONMEBOL Libertadores",
+                pais="World",
+                tipo="Cup",
+                temporadas=temporadas_libertadores,
+            )
+        )
+    campos = ESTATISTICAS_COMPLETAS if estatisticas is None else estatisticas
     return Sondagem(
         plano="Free",
-        temporadas_do_brasileirao=temporadas,
+        competicoes=competicoes,
+        estatisticas_do_jogador=campos,
+        grupos_encontrados={chave.split(".", 1)[0] for chave in campos},
         lesoes_encontradas=lesoes,
-        temporada_testada=max(temporadas) if temporadas else None,
+        temporada_testada=max(temporadas_serie_a) if temporadas_serie_a else None,
     )
 
 
-def test_sem_temporada_nao_compensa() -> None:
-    """Sem Brasileirão liberado, o item perde o objeto."""
-    viavel, motivo = vale_a_pena(_relatorio([]))
-    assert not viavel
-    assert "nenhuma temporada" in motivo
+# ----------------------------------------------------------------------------------------
+# O critério de decisão
+# ----------------------------------------------------------------------------------------
 
 
-def test_uma_temporada_so_nao_e_historico() -> None:
-    """A especificação pede histórico de lesões; com um ano não há o que comparar."""
-    viavel, motivo = vale_a_pena(_relatorio([2025]))
-    assert not viavel
-    assert "sem histórico" in motivo
+def test_competicao_sem_estatistica_nao_sustenta_a_camada() -> None:
+    """Sem finalização, passe e duelo sobra uma tabela de gols e cartões, que qualquer
+    site já mostra — não é ferramenta de scouting."""
+    veredito = avaliar(_sondagem([2023, 2024, 2025], estatisticas=[]))
+    assert veredito.cobre_brasileirao
+    assert not veredito.tem_estatistica_util
+    assert not veredito.vale_a_camada_2
 
 
-def test_sem_lesoes_nao_compensa() -> None:
-    """Temporada liberada mas endpoint vazio entrega metade do que o item prometia."""
-    viavel, _ = vale_a_pena(_relatorio([2023, 2024, 2025], lesoes=0))
-    assert not viavel
+def test_estatistica_sem_competicao_nao_sustenta_a_camada() -> None:
+    """Com uma temporada só não há histórico, que é metade do que a ferramenta faz."""
+    veredito = avaliar(_sondagem([2025]))
+    assert not veredito.cobre_brasileirao
+    assert veredito.tem_estatistica_util
+    assert not veredito.vale_a_camada_2
 
 
-def test_varias_temporadas_com_lesoes_compensa() -> None:
-    viavel, motivo = vale_a_pena(_relatorio([2023, 2024, 2025]))
-    assert viavel
-    assert "3 temporadas" in motivo
+def test_competicao_e_estatistica_juntas_sustentam() -> None:
+    veredito = avaliar(_sondagem([2023, 2024, 2025], temporadas_libertadores=[2024, 2025]))
+    assert veredito.vale_a_camada_2
+    assert veredito.cobre_continental
+
+
+def test_grupo_minimo_faltando_derruba_a_estatistica() -> None:
+    """Falta o duelo: o veredito precisa dizer qual grupo faltou, não só recusar."""
+    veredito = avaliar(_sondagem([2023, 2024], estatisticas=["shots.total", "passes.total"]))
+    assert not veredito.tem_estatistica_util
+    assert any("duels" in motivo for motivo in veredito.motivos)
+
+
+def test_libertadores_ausente_nao_derruba_o_brasileirao() -> None:
+    """São decisões separadas: a liga nacional sozinha já sustentaria a camada."""
+    veredito = avaliar(_sondagem([2023, 2024, 2025]))
+    assert veredito.vale_a_camada_2
+    assert not veredito.cobre_continental
+
+
+def test_lesoes_sao_relatadas_a_parte() -> None:
+    """Lesão não entra no critério da camada 2: ela não depende de dado de evento e
+    entra na tabela própria, que já existe no schema."""
+    com = avaliar(_sondagem([2023, 2024], lesoes=120))
+    sem = avaliar(_sondagem([2023, 2024], lesoes=0))
+    assert com.tem_lesoes and not sem.tem_lesoes
+    assert com.vale_a_camada_2 == sem.vale_a_camada_2
 
 
 def test_limite_de_temporadas_e_ajustavel() -> None:
-    """O critério é um parâmetro, não um número escondido no meio do código."""
-    assert vale_a_pena(_relatorio([2024, 2025]), minimo_de_temporadas=2)[0]
-    assert not vale_a_pena(_relatorio([2024, 2025]), minimo_de_temporadas=3)[0]
+    """O critério é parâmetro, não número escondido no meio do código."""
+    assert avaliar(_sondagem([2024, 2025]), minimo_de_temporadas=2).cobre_brasileirao
+    assert not avaliar(_sondagem([2024, 2025]), minimo_de_temporadas=3).cobre_brasileirao
+
+
+# ----------------------------------------------------------------------------------------
+# Leitura defensiva: a documentação da fonte não é legível, então nada se supõe
+# ----------------------------------------------------------------------------------------
+
+
+def test_achatar_transforma_grupos_em_caminhos() -> None:
+    assert _achatar({"shots": {"total": 3, "on": 1}}) == ["shots.on", "shots.total"]
+
+
+def test_achatar_aguenta_valor_solto_no_lugar_de_grupo() -> None:
+    """Se a fonte mudar e mandar um escalar, o código relata em vez de quebrar."""
+    assert _achatar({"rating": "7.2", "shots": {"total": 2}}) == ["rating", "shots.total"]
+
+
+def test_competicoes_de_resposta_vazia_nao_quebra() -> None:
+    assert _competicoes_de({}) == []
+    assert _competicoes_de({"response": None}) == []
+
+
+def test_competicao_pega_a_cobertura_da_temporada_mais_recente() -> None:
+    corpo = {
+        "response": [
+            {
+                "league": {"id": 71, "name": "Serie A", "type": "League"},
+                "country": {"name": "Brazil"},
+                "seasons": [
+                    {"year": 2023, "coverage": {"players": False}},
+                    {"year": 2025, "coverage": {"players": True}},
+                ],
+            }
+        ]
+    }
+    competicao = _competicoes_de(corpo)[0]
+    assert competicao.temporadas == [2023, 2025]
+    assert competicao.cobertura == {"players": True}
+
+
+def test_busca_de_competicao_ignora_caixa_e_aceita_varios_termos() -> None:
+    relatorio = _sondagem([2024, 2025], temporadas_libertadores=[2025])
+    assert relatorio.competicao("libertadores") is not None
+    assert relatorio.competicao("CONMEBOL", "Libertadores") is not None
+    assert relatorio.competicao("premier league") is None
+
+
+def test_grupos_minimos_sao_os_que_viram_metrica() -> None:
+    """Fixa o contrato: mudar isto muda o que a ferramenta consegue calcular."""
+    assert sorted(GRUPOS_MINIMOS) == ["duels", "passes", "shots"]
 
 
 def test_sem_chave_a_mensagem_diz_o_que_fazer(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Erro esperado: a chave é credencial pessoal e pode simplesmente não existir ainda."""
+    """Erro esperado: a chave é credencial pessoal e pode não existir ainda."""
     from fscout import config
 
     monkeypatch.setattr(config.get_settings(), "api_football_key", "", raising=False)
