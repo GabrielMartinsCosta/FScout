@@ -375,6 +375,13 @@ Um TCC ganha credibilidade ao delimitar o que *não* faz. Estas são as fronteir
 - **Defeitos de identidade na fonte agregada.** Um identificador aparece atribuído a duas
   pessoas na mesma partida (65657, como "Jesús Sagredo" e "José Sagredo"). A carga mantém
   a primeira ocorrência e **relata** o caso, em vez de descartá-lo em silêncio.
+- **O histórico de lesões é parcial, e por limite da fonte.** Ela registra uma linha por
+  partida perdida, não por lesão: não há data de início, fim nem dias fora. O número de
+  partidas perdidas é exato; as datas são limites do episódio; os dias fora são um
+  **piso**, porque o afastamento começa antes da primeira partida perdida. A área do
+  corpo só existe quando o motivo a nomeia — em 54 dos 78 episódios do Brasileirão de
+  2024, ela é desconhecida. Agrupar ausências seguidas em episódios, com corte de 30
+  dias, é a única inferência do módulo e está declarada como convenção.
 - **Ficha básica incompleta na fonte primária.** A StatsBomb não informa data de nascimento,
   altura, peso nem pé preferencial. Idade, altura e pé dependem da ligação com o
   Transfermarkt; peso não tem fonte aberta confiável.
@@ -471,6 +478,9 @@ modelo de xG próprio, segunda fonte de eventos (Wyscout).
 | 43 | A recusa do plano vira dado, não exceção | A mensagem traz o intervalo de temporadas liberado: é cobertura disfarçada de erro | Tratar como falha e parar |
 | 44 | Tipos de competição por tabela explícita | A heurística "país igual a World" classificou a Copa América, torneio de seleções, como competição de clubes | Deduzir o tipo do país e do nome |
 | 45 | Onde o gráfico não se aplica, a tela explica | Gráfico vazio e gráfico inaplicável parecem iguais e dizem coisas opostas | Renderizar o gráfico vazio |
+| 46 | Ausência médica e disciplinar classificadas por tabela explícita | "Suspended" não contém "injury", mas "Personal Reasons" também não; regra por substring erraria | Deduzir do texto do motivo |
+| 47 | Ausências seguidas agrupadas em episódio, com corte declarado | Sem agrupar, 1.172 registros genéricos virariam 1.172 "lesões" | Uma lesão por partida perdida |
+| 48 | Lesão só para atleta já no elenco | Criar atleta a partir de uma ausência encheria a base de nomes sem partida | Criar o atleta junto com a lesão |
 
 ---
 

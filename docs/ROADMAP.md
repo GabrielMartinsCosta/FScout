@@ -356,8 +356,27 @@ Fase 5, a consolidação:
 2. [ ] **Carga completa do Brasileirão** — quatro dias de cota gratuita, ou uma tarde no
    plano pago. Hoje há quatro partidas carregadas, o bastante para a ferramenta funcionar
    e pouco para ela demonstrar.
-3. [ ] **Histórico de lesões** — a tabela existe desde a Fase 0, vazia. O endpoint
-   devolveu 1.668 registros só no Brasileirão de 2024, e vem paginado.
+3. [x] **Histórico de lesões** — o último item aberto da especificação, carregado e
+   **parcialmente** entregue, porque a fonte não tem o que o nome do endpoint promete.
+
+   Ela dá uma linha por *partida perdida*, não por lesão: sem data de início, fim ou dias
+   fora. Das 22 razões observadas, cinco são disciplinares ou administrativas — gravar um
+   cartão como lesão seria simplesmente errado, então a classificação é explícita. Das
+   1.414 ausências médicas, a maioria diz só "Injury", sem nomear a área.
+
+   | Campo | Confiabilidade |
+   |---|---|
+   | Partidas perdidas | **exato** — é o que a fonte conta |
+   | Datas de início e fim | limites do episódio, não diagnóstico |
+   | Dias fora | **piso**: o afastamento começa antes da primeira partida perdida |
+   | Área do corpo | ausente em 54 dos 78 episódios |
+
+   O agrupamento de ausências seguidas em episódios (corte de 30 dias) é a **única
+   inferência** do módulo, e está declarada como convenção. Resultado no Brasileirão de
+   2024: 78 episódios, 62 atletas, com Pablo Maia perdendo 29 jogos por lesão na coxa.
+
+   Isso destrava a análise de **disponibilidade** — histórico de lesão cruzado com
+   minutagem —, que nada mais no projeto oferece.
 4. [ ] **Testes de ponta a ponta** — a cadeia ingestão → métrica → API → figura tem
    cobertura em cada elo, mas não de uma ponta à outra.
 5. [ ] **Redação** — metodologia, resultados e limitações.

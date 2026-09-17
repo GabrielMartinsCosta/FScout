@@ -550,27 +550,46 @@ def api_football_lesoes(
         int, typer.Option(help="Teto de requisições. 0 pergunta à conta quanto ainda cabe.")
     ] = 0,
 ) -> None:
-    """Baixa o histórico de lesões da temporada, que vem paginado."""
-    from fscout.ingestion.apifootball import ChaveAusente, baixar_lesoes, orcamento_do_dia
+    """Baixa e grava o histórico de afastamentos da temporada.
 
+    A fonte dá uma linha por partida perdida, e não por lesão: ausências médicas seguidas
+    do mesmo atleta são agrupadas num episódio. Suspensão e motivo administrativo ficam
+    de fora — gravar cartão como lesão seria simplesmente errado.
+    """
+    from fscout.ingestion.apifootball import ChaveAusente
+    from fscout.ingestion.apifootball.injuries import JANELA_DE_EPISODIO, carregar_lesoes
+
+    del requisicoes  # a consulta de lesões cabe numa requisição; o teto não se aplica
     try:
-        orcamento = requisicoes if requisicoes > 0 else orcamento_do_dia()[0]
-        if orcamento <= 0:
-            console.print("[yellow]A cota de hoje acabou. Rode de novo amanhã.[/yellow]")
-            raise typer.Exit(code=0)
-        with console.status(f"Baixando lesões de {competicao}/{temporada}"):
-            progresso = baixar_lesoes(competicao, temporada, orcamento)
+        with console.status(f"Lendo e gravando lesões de {competicao}/{temporada}"):
+            relatorio = carregar_lesoes(competicao, temporada)
     except ChaveAusente as erro:
         console.print(f"[yellow]{erro}[/yellow]")
         raise typer.Exit(code=1) from erro
 
-    console.print(
-        f"Lesões declaradas: {progresso.partidas_encerradas} · "
-        f"baixadas: {progresso.baixadas_agora} · faltam: {progresso.faltam} · "
-        f"requisições gastas: {progresso.gastas}"
-    )
-    for aviso in progresso.avisos:
-        console.print(f"[yellow]{aviso}[/yellow]")
+    fonte = Table(title="Ausências na fonte", show_header=False)
+    fonte.add_row("Registros (uma linha por partida perdida)", str(relatorio.ausencias_na_fonte))
+    fonte.add_row("Médicas", str(relatorio.medicas))
+    fonte.add_row("Disciplinares (não entram)", str(relatorio.disciplinares))
+    fonte.add_row("Administrativas (não entram)", str(relatorio.administrativas))
+    fonte.add_row("Requisições gastas", str(relatorio.gastas))
+    console.print(fonte)
+
+    gravado = Table(title="Gravado como afastamento", show_header=False)
+    gravado.add_row("Episódios", str(relatorio.episodios))
+    gravado.add_row("Atletas", str(relatorio.atletas))
+    gravado.add_row("Sem área do corpo nomeada", str(relatorio.sem_area))
+    gravado.add_row("Episódios de atleta fora do elenco", str(relatorio.atletas_fora_do_elenco))
+    gravado.add_row("Corte de episódio", f"{JANELA_DE_EPISODIO} dias entre partidas perdidas")
+    console.print(gravado)
+
+    for motivo in relatorio.motivos_desconhecidos:
+        console.print(f"[yellow]motivo não classificado[/yellow] {motivo!r}")
+    if relatorio.atletas_fora_do_elenco:
+        console.print(
+            "Atleta sem partida carregada não recebe lesão: criar um registro a partir "
+            "de uma ausência encheria a base de nomes sem jogo nenhum."
+        )
 
 
 @app.command()
