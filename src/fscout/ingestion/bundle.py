@@ -54,3 +54,7 @@ class MatchBundle:
     # Projeção da camada agregada. Vem vazia nas fontes de evento e é a única coisa que
     # a fonte agregada preenche: lá a linha já chega totalizada, sem ação para projetar.
     player_match_stats: list[Row] = field(default_factory=list)
+    # Problemas encontrados na tradução que não impedem a carga, mas que quem carrega
+    # precisa ver. Defeito de fonte descartado em silêncio vira número errado sem
+    # sintoma; aqui ele chega junto com o dado.
+    avisos: list[str] = field(default_factory=list)

@@ -52,6 +52,7 @@ class RelatorioDeCarga:
     estatisticas: int = 0
     placares_divergentes: list[str] = field(default_factory=list)
     posicoes_desconhecidas: Counter[str] = field(default_factory=Counter)
+    avisos_da_fonte: list[str] = field(default_factory=list)
 
     @property
     def completa(self) -> bool:
@@ -124,6 +125,7 @@ def carregar_temporada(competicao: int, temporada: int) -> RelatorioDeCarga:
 
             relatorio.partidas_carregadas += 1
             relatorio.estatisticas += len(bundle.player_match_stats)
+            relatorio.avisos_da_fonte.extend(bundle.avisos)
             atletas_vistos.update(resultado.player_ids)
             if not bundle.goal_check.ok:
                 relatorio.placares_divergentes.append(

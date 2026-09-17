@@ -479,14 +479,50 @@ def api_football_carregar(
     tabela.add_row("Atletas", str(relatorio.atletas))
     tabela.add_row("Linhas de estatística", f"{relatorio.estatisticas:,}".replace(",", "."))
     tabela.add_row("Placares divergentes", str(len(relatorio.placares_divergentes)))
+    tabela.add_row("Defeitos da fonte", str(len(relatorio.avisos_da_fonte)))
     console.print(tabela)
 
+    for aviso in relatorio.avisos_da_fonte[:10]:
+        console.print(f"[yellow]defeito da fonte[/yellow] {aviso}")
     for divergencia in relatorio.placares_divergentes[:10]:
         console.print(f"[yellow]placar divergente[/yellow] {divergencia}")
     for posicao, quantas in relatorio.posicoes_desconhecidas.most_common(5):
         console.print(f"[yellow]posição não mapeada[/yellow] {posicao} ({quantas}x)")
     if relatorio.completa:
         console.print("[green]Temporada inteira carregada.[/green]")
+
+
+@apifootball_app.command("ligar")
+def api_football_ligar() -> None:
+    """Liga os atletas da camada agregada ao elenco canônico. Não vai à rede.
+
+    Usa a competição que existe nas duas fontes como âncora: mesmas partidas, mesmas
+    escalações, número de camisa como desempate. Atleta duplicado pela carga é fundido.
+    """
+    from fscout.ingestion.apifootball.linker import ligar_atletas
+
+    with Session(get_engine()) as session, console.status("Ligando atletas"):
+        relatorio = ligar_atletas(session)
+
+    tabela = Table(title="Ligação com o elenco canônico", show_header=False)
+    tabela.add_row("Partidas na camada agregada", str(relatorio.partidas_agregadas))
+    tabela.add_row("Partidas na camada de evento", str(relatorio.partidas_de_evento))
+    tabela.add_row("Partidas em comum", str(relatorio.partidas_ligadas))
+    tabela.add_row("Atletas na sobreposição", str(relatorio.atletas_na_sobreposicao))
+    tabela.add_row(
+        "Ligados", f"{relatorio.atletas_ligados} ({relatorio.cobertura:.1%} da sobreposição)"
+    )
+    tabela.add_row("Duplicados fundidos", str(relatorio.atletas_fundidos))
+    tabela.add_row("Ambíguos (recusados)", str(len(relatorio.ambiguos)))
+    tabela.add_row("Com voto divergente", str(len(relatorio.conflitantes)))
+    console.print(tabela)
+
+    if not relatorio.partidas_ligadas:
+        console.print(
+            "[yellow]Nenhuma partida em comum entre as camadas.[/yellow] A ligação precisa "
+            "de uma competição presente nas duas fontes — a Copa América de 2024, por "
+            "exemplo, existe na StatsBomb e no API-Football."
+        )
 
 
 @apifootball_app.command("lesoes")

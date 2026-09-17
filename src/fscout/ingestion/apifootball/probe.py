@@ -119,17 +119,24 @@ def achatar(estatisticas: dict[str, Any]) -> list[str]:
     return sorted(chaves)
 
 
-def partidas_encerradas(corpo: dict[str, Any]) -> list[dict[str, Any]]:
-    """Só os jogos já disputados.
+# Códigos de partida terminada. Os três significam "Match Finished" na descrição longa
+# da fonte, e confundir isso custa caro: a Copa América de 2024 tem 27 `FT`, 4 `PEN` e
+# 1 `AET`, então aceitar só `FT` descartaria cinco jogos — inclusive a final. O erro não
+# aparece em liga nacional, onde tudo termina em 90 minutos, e foi preciso um mata-mata
+# para expô-lo.
+STATUS_ENCERRADOS = frozenset({"FT", "AET", "PEN"})
 
-    Jogo não realizado não tem estatística de jogador, e sondar um jogo vazio não
-    provaria nada sobre a profundidade da fonte.
+
+def partidas_encerradas(corpo: dict[str, Any]) -> list[dict[str, Any]]:
+    """Só os jogos já disputados, em qualquer forma de desfecho.
+
+    Jogo não realizado não tem estatística de jogador, e pedi-lo gastaria cota à toa.
     """
     todas = corpo.get("response", []) or []
     return [
         partida
         for partida in todas
-        if (((partida.get("fixture") or {}).get("status") or {}).get("short")) == "FT"
+        if (((partida.get("fixture") or {}).get("status") or {}).get("short")) in STATUS_ENCERRADOS
     ]
 
 

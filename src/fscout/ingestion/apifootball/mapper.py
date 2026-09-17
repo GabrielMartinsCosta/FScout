@@ -214,6 +214,8 @@ def build_match_bundle(fixture: dict[str, Any], jogadores: dict[str, Any]) -> Ma
     participacoes: list[Row] = []
     estatisticas: list[Row] = []
     gols_por_lado = {ref_casa: 0, ref_fora: 0}
+    avisos: list[str] = []
+    ja_vistos: set[str] = set()
 
     for time in jogadores.get("response") or []:
         ref_time = str((time.get("team") or {}).get("id"))
@@ -232,6 +234,18 @@ def build_match_bundle(fixture: dict[str, Any], jogadores: dict[str, Any]) -> Ma
                 continue  # reserva que não entrou: não é participação
 
             ref_atleta = str(atleta.get("id"))
+            if ref_atleta in ja_vistos:
+                # Defeito observado na fonte: o id 65657 aparece duas vezes na mesma
+                # partida da Copa América, como "Jesús Sagredo" e "José Sagredo". Um
+                # identificador para duas pessoas. Fica a primeira ocorrência, porque
+                # duas participações do mesmo atleta canônico numa partida não existem —
+                # e o aviso sobe junto com o dado, para o defeito não sumir calado.
+                avisos.append(
+                    f"atleta {ref_atleta} repetido na partida {dados.get('id')} "
+                    f"(segundo nome: {atleta.get('name')!r}); ficou a primeira ocorrência"
+                )
+                continue
+            ja_vistos.add(ref_atleta)
             atletas[ref_atleta] = {"source_id": ref_atleta, "name": str(atleta.get("name", ""))}
             medidas = _estatisticas(bruto)
             gols_por_lado[ref_time] = gols_por_lado.get(ref_time, 0) + medidas["goals"]
@@ -277,4 +291,5 @@ def build_match_bundle(fixture: dict[str, Any], jogadores: dict[str, Any]) -> Ma
             from_events=(gols_por_lado.get(ref_casa, 0), gols_por_lado.get(ref_fora, 0)),
         ),
         player_match_stats=estatisticas,
+        avisos=avisos,
     )
