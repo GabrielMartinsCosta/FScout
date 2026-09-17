@@ -20,7 +20,7 @@ from sqlalchemy import ColumnElement, Select
 from sqlalchemy.orm import aliased
 
 from fscout.db.models import Appearance, Competition, Match, Season
-from fscout.domain.enums import CompetitionType, HomeAway, PositionGroup
+from fscout.domain.enums import CompetitionType, DataTier, HomeAway, PositionGroup
 
 
 @dataclass(frozen=True)
@@ -43,6 +43,12 @@ class Slice:
     position_groups: tuple[PositionGroup, ...] = ()
     min_minutes: int | None = None
     label: str | None = None
+    # Camada de dado. É **uma**, nunca um conjunto, e é o único campo com valor padrão
+    # que restringe: recorte que atravessasse camadas somaria gol contado a partir de
+    # evento com gol contado a partir de total agregado, e dividiria tudo por uma
+    # minutagem que mistura as duas. Escolher uma camada por vez torna isso impossível
+    # por construção, em vez de depender de quem escreve a consulta lembrar de conferir.
+    data_tier: DataTier = DataTier.EVENT
 
     def with_(self, **changes: Any) -> Slice:
         """Cópia com campos trocados, para derivar recortes ("o mesmo, mas em 2025")."""
@@ -71,7 +77,9 @@ def appearance_conditions(recorte: Slice) -> list[ColumnElement[bool]]:
     Pressupõe que a consulta já tenha `Appearance`, `Match`, `Season` e `Competition`
     disponíveis — use `join_context` para isso.
     """
-    condicoes: list[ColumnElement[bool]] = []
+    # Sempre presente, mesmo sem ninguém pedir: é o que garante que toda minutagem,
+    # métrica e percentil de uma avaliação saiam da mesma granularidade de dado.
+    condicoes: list[ColumnElement[bool]] = [Match.data_tier == recorte.data_tier]
     if recorte.player_ids:
         condicoes.append(Appearance.player_id.in_(recorte.player_ids))
     if recorte.team_ids:

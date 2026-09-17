@@ -26,7 +26,12 @@ from typing import Any
 
 from sqlalchemy import ColumnElement
 
-from fscout.domain.enums import PositionGroup
+from fscout.domain.enums import DataTier, PositionGroup
+
+# Quase toda métrica do catálogo é uma consulta sobre eventos, e só existe onde há
+# evento. Declarar o padrão aqui evita repeti-lo em 108 registros.
+SOMENTE_EVENTO: tuple[DataTier, ...] = (DataTier.EVENT,)
+AMBAS_AS_CAMADAS: tuple[DataTier, ...] = (DataTier.EVENT, DataTier.AGGREGATE)
 
 TODAS_AS_POSICOES: tuple[PositionGroup, ...] = (
     PositionGroup.GOALKEEPER,
@@ -80,6 +85,9 @@ class MetricSpec:
     per_90: bool = True
     higher_is_better: bool = True
     positions: tuple[PositionGroup, ...] = TODAS_AS_POSICOES
+    # Camadas em que a métrica pode ser calculada. "Finalizações fora da área" exige
+    # coordenada e só existe sobre evento; "gols" existe nas duas.
+    data_tiers: tuple[DataTier, ...] = SOMENTE_EVENTO
     include_shootout: bool = False
     # Razão ou média abaixo deste número de linhas não é divulgada: 100% de aproveitamento
     # em um único duelo não é informação, e distorce comparação e percentil.
@@ -96,6 +104,10 @@ class MetricSpec:
 
     def applies_to(self, position: PositionGroup | None) -> bool:
         return position is None or position in self.positions
+
+    def applies_to_tier(self, tier: DataTier) -> bool:
+        """Se a métrica pode ser calculada com o dado daquela granularidade."""
+        return tier in self.data_tiers
 
 
 # A fórmula recebe os valores das métricas de entrada e a minutagem do atleta no recorte.
@@ -119,10 +131,15 @@ class CompositeSpec:
     per_90: bool = True
     higher_is_better: bool = True
     positions: tuple[PositionGroup, ...] = TODAS_AS_POSICOES
+    data_tiers: tuple[DataTier, ...] = SOMENTE_EVENTO
     description: str = ""
 
     def applies_to(self, position: PositionGroup | None) -> bool:
         return position is None or position in self.positions
+
+    def applies_to_tier(self, tier: DataTier) -> bool:
+        """Uma composta vale na camada em que todas as suas entradas valem."""
+        return tier in self.data_tiers
 
 
 Spec = MetricSpec | CompositeSpec

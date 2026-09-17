@@ -373,6 +373,28 @@ class PositionGroup(LenientStrEnum):
     UNKNOWN = "unknown"
 
 
+class DataTier(LenientStrEnum):
+    """Granularidade do dado de origem de uma partida.
+
+    Existe porque não há dado de evento aberto para o futebol de clubes sul-americano, e
+    a cobertura dele precisa vir de estatística já agregada. As duas granularidades
+    respondem perguntas diferentes e **não se somam**:
+
+    - `EVENT`: uma linha por ação, com coordenada e qualificadores. É sobre isso que as
+      108 métricas do catálogo são calculadas, e é o que alimenta os mapas de campo.
+    - `AGGREGATE`: totais por jogador e por partida, sem coordenada. Alimenta métrica,
+      não alimenta mapa.
+
+    "Finalizações fora da área" existe numa camada e não existe na outra; somar as duas
+    produziria um número que subconta sem avisar. Por isso a camada é gravada na partida
+    e todo recorte, métrica e percentil a leva em conta.
+    """
+
+    EVENT = "event"
+    AGGREGATE = "aggregate"
+    UNKNOWN = "unknown"
+
+
 class HomeAway(LenientStrEnum):
     """Mando de campo da equipe na partida.
 

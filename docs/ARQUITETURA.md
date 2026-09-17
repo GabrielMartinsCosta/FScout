@@ -406,6 +406,10 @@ modelo de xG próprio, segunda fonte de eventos (Wyscout).
 | 32 | Código ISO gravado em `countries.iso3`, de tabela explícita | Posiciona o mapa sem geocodificar; a coluna já existia para isso | Mapear nome para posição na camada de tela |
 | 33 | Estado extinto de sucessão ambígua fica sem código | Escolher um sucessor plantaria um marcador onde ninguém jogou | Atribuir o sucessor mais provável |
 | 34 | País do adversário, e não do atleta, no mapa-múndi | É a leitura que acompanha a minutagem e responde "contra quem ele produz" | Agregar por nacionalidade do atleta |
+| 35 | Camada de dado gravada na partida | Toda partida vem inteira de uma fonte, e dali a camada alcança todo recorte, que já passa por `matches` | Marcar a camada na participação ou na competição |
+| 36 | O recorte nomeia **uma** camada, com evento por padrão | Recorte que atravessasse camadas somaria gol de evento com gol de total agregado e dividiria por minutagem misturada | Aceitar um conjunto de camadas e tratar os casos |
+| 37 | A métrica declara em que camadas existe | "Finalizações fora da área" precisa de coordenada; sobre dado agregado não vale zero, vale desconhecido | Calcular tudo e deixar dar zero |
+| 38 | Acréscimo de coluna por lista explícita, sem Alembic | Recarregar 662 mil eventos por uma coluna com valor padrão é desperdício; um framework de migração ainda não se paga | Adotar Alembic, ou recarregar o banco a cada coluna |
 
 ---
 

@@ -25,7 +25,7 @@ from sqlalchemy import Select, and_, case, func, select
 from sqlalchemy.orm import Session
 
 from fscout.db.models import Event
-from fscout.domain.enums import PositionGroup
+from fscout.domain.enums import DataTier, PositionGroup
 from fscout.metrics.context import (
     Slice,
     appearance_conditions,
@@ -95,7 +95,12 @@ def evaluate(
             player_id: total for player_id, total in minutos.items() if total >= recorte.min_minutes
         }
 
-    basicas, compostas = _separar(specs)
+    # Métrica que não existe na camada pedida é omitida, e não calculada como zero:
+    # "finalizações fora da área" sobre dado agregado não vale zero, vale desconhecido.
+    # Quem chamou pode listar as omitidas com `metricas_fora_da_camada`.
+    aplicaveis = [spec for spec in specs if spec.applies_to_tier(recorte.data_tier)]
+    basicas, compostas = _separar(aplicaveis)
+    basicas = [spec for spec in basicas if spec.applies_to_tier(recorte.data_tier)]
     resultados: dict[int, dict[str, MetricValue]] = {player_id: {} for player_id in minutos}
 
     for spec in basicas:
@@ -132,6 +137,16 @@ def evaluate(
         for spec in (*basicas, *compostas):
             _preencher_percentis(spec, resultados, grupos)
     return resultados
+
+
+def metricas_fora_da_camada(specs: Sequence[Spec], tier: DataTier) -> list[str]:
+    """Chaves das métricas pedidas que não se calculam naquela granularidade.
+
+    Existe para a tela poder **nomear** o que ficou de fora. Sumir com a métrica sem
+    dizer nada faria o leitor concluir que o atleta não tem aquela ação, quando o caso é
+    que a fonte não registra aquilo.
+    """
+    return [spec.key for spec in specs if not spec.applies_to_tier(tier)]
 
 
 def _separar(specs: Sequence[Spec]) -> tuple[list[MetricSpec], list[CompositeSpec]]:

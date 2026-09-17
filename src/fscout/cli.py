@@ -65,8 +65,13 @@ def main(
 
 @app.command("init-db")
 def init_db() -> None:
-    """Cria as tabelas que ainda não existem."""
+    """Cria as tabelas que faltam e acrescenta as colunas novas ao que já existe."""
+    from fscout.db.migrations import garantir_colunas
+
     create_all()
+    acrescentadas = garantir_colunas()
+    for coluna in acrescentadas:
+        console.print(f"Coluna acrescentada: [bold]{coluna}[/bold]")
     console.print("[green]Banco pronto.[/green]")
 
 

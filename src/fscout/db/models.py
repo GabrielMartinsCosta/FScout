@@ -54,6 +54,7 @@ from fscout.domain.enums import (
     BodyPart,
     CardType,
     CompetitionType,
+    DataTier,
     DefensiveActionType,
     DribbleOutcome,
     DuelOutcome,
@@ -288,6 +289,11 @@ class Match(Base):
     referee: Mapped[str | None] = mapped_column(String(96))
     attendance: Mapped[int | None] = mapped_column(Integer)
     is_neutral_venue: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Granularidade do dado desta partida. Fica aqui, e não na participação, porque toda
+    # partida vem inteira de uma fonte só — e daqui ela alcança qualquer consulta, já que
+    # todo recorte do sistema já passa por `matches`.
+    data_tier: Mapped[DataTier] = enum_column(DataTier, default=DataTier.EVENT, index=True)
 
     season: Mapped[Season] = relationship()
     home_team: Mapped[Team] = relationship(foreign_keys=[home_team_id])
