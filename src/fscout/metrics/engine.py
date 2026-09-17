@@ -182,8 +182,10 @@ def _montar_consulta(spec: MetricSpec, recorte: Slice) -> Select[Any]:
     origem = spec.table
     valor, amostra = _expressoes(spec)
     consulta = select(origem.player_id, valor, amostra).select_from(origem)
-    if origem is not Event:
-        # As projeções guardam `event_id`; métrica sobre o próprio evento dispensa o join.
+    if hasattr(origem, "event_id"):
+        # Projeção de evento: o join traz período, minuto e padrão de jogada, de que os
+        # filtros dependem. Métrica sobre o próprio evento já os tem, e a projeção da
+        # camada agregada não tem evento a que se ligar — lá a linha é a partida inteira.
         consulta = consulta.join(Event, Event.id == origem.event_id)
     consulta = join_context(consulta, origem)
 
@@ -207,12 +209,23 @@ def _expressoes(spec: MetricSpec) -> tuple[Any, Any]:
         return func.sum(spec.value_column), amostra
     if spec.aggregation is Aggregation.AVERAGE:
         return func.avg(spec.value_column), amostra
+    if spec.aggregation is Aggregation.RATE:
+        # A amostra é o denominador somado, e não a contagem de linhas: numa camada onde
+        # cada linha é uma partida, "dez linhas" não diz nada sobre a confiabilidade de
+        # um aproveitamento, mas "dez finalizações" diz.
+        denominador = func.sum(spec.value_column)
+        numerador = func.sum(spec.numerator_column)
+        return numerador * 1.0 / func.nullif(denominador, 0), denominador
     sucessos = func.sum(case((and_(*spec.numerator), 1), else_=0))
     return sucessos * 1.0 / func.nullif(amostra, 0), amostra
 
 
 def _valor_vazio(spec: MetricSpec) -> float | None:
-    """Sem nenhuma linha, contagem e soma valem zero; média e razão não existem."""
+    """Sem nenhuma linha, contagem e soma valem zero; média e razão não existem.
+
+    A diferença importa: zero finalização é um fato sobre o atleta, mas zero por cento de
+    aproveitamento sem ter finalizado é uma afirmação que ninguém fez.
+    """
     return 0.0 if spec.aggregation in (Aggregation.COUNT, Aggregation.SUM) else None
 
 

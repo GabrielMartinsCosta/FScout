@@ -54,6 +54,12 @@ class Aggregation(StrEnum):
     SUM = "sum"
     AVERAGE = "average"
     RATIO = "ratio"
+    # Razão entre duas somas, e não entre linhas. Existe para a camada agregada, onde
+    # cada linha é uma partida com contadores: "aproveitamento de finalização" ali é
+    # `soma(no alvo) / soma(finalizações)`, e não a proporção de linhas que deram certo.
+    # A amostra passa a ser o **denominador somado**, o que torna o piso significativo:
+    # "mínimo de 10 finalizações" em vez de "mínimo de 10 partidas".
+    RATE = "rate"
 
 
 class Unit(StrEnum):
@@ -81,6 +87,9 @@ class MetricSpec:
     predicate: tuple[ColumnElement[bool], ...] = ()
     numerator: tuple[ColumnElement[bool], ...] = ()
     value_column: Any = None
+    # Só em `RATE`: a coluna (ou expressão) somada no numerador. O denominador é
+    # `value_column`, para que o piso de amostra caia sobre ele.
+    numerator_column: Any = None
     unit: Unit = Unit.COUNT
     per_90: bool = True
     higher_is_better: bool = True
@@ -97,9 +106,14 @@ class MetricSpec:
     def __post_init__(self) -> None:
         if self.aggregation is Aggregation.RATIO and not self.numerator:
             raise ValueError(f"{self.key}: razão exige `numerator`")
-        if self.aggregation in (Aggregation.SUM, Aggregation.AVERAGE) and self.value_column is None:
+        if (
+            self.aggregation in (Aggregation.SUM, Aggregation.AVERAGE, Aggregation.RATE)
+            and self.value_column is None
+        ):
             raise ValueError(f"{self.key}: {self.aggregation} exige `value_column`")
-        if self.aggregation is Aggregation.RATIO and self.per_90:
+        if self.aggregation is Aggregation.RATE and self.numerator_column is None:
+            raise ValueError(f"{self.key}: razão entre somas exige `numerator_column`")
+        if self.aggregation in (Aggregation.RATIO, Aggregation.RATE) and self.per_90:
             raise ValueError(f"{self.key}: razão não se normaliza por 90 minutos")
 
     def applies_to(self, position: PositionGroup | None) -> bool:

@@ -20,7 +20,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
 from fscout.db.migrations import COLUNAS_ESPERADAS, colunas_faltantes, garantir_colunas
-from fscout.db.models import Pass, Shot
+from fscout.db.models import Pass, PlayerMatchStat, Shot
 from fscout.db.session import build_engine, create_all
 from fscout.domain.enums import DataTier
 from fscout.metrics.context import Slice, appearance_conditions
@@ -156,6 +156,83 @@ def test_linha_antiga_recebe_a_camada_de_evento(engine: Engine) -> None:
 def test_tabela_inexistente_e_ignorada(engine: Engine) -> None:
     """Banco vazio é trabalho de `create_all`, não da migração."""
     assert colunas_faltantes(engine) == []
+
+
+# ----------------------------------------------------------------------------------------
+# A agregação que a camada agregada exigiu
+# ----------------------------------------------------------------------------------------
+
+
+def test_razao_entre_somas_exige_os_dois_lados() -> None:
+    """Sem numerador declarado a métrica não tem o que dividir, e falhar na definição é
+    melhor que devolver nulo em toda consulta."""
+    with pytest.raises(ValueError, match="numerator_column"):
+        MetricSpec(
+            key="x",
+            label="x",
+            family="teste",
+            table=PlayerMatchStat,
+            aggregation=Aggregation.RATE,
+            value_column=PlayerMatchStat.shots_total,
+        )
+
+
+def test_razao_entre_somas_exige_denominador() -> None:
+    with pytest.raises(ValueError, match="value_column"):
+        MetricSpec(
+            key="x",
+            label="x",
+            family="teste",
+            table=PlayerMatchStat,
+            aggregation=Aggregation.RATE,
+            numerator_column=PlayerMatchStat.shots_on_target,
+        )
+
+
+def test_razao_entre_somas_nao_se_normaliza_por_90() -> None:
+    """Aproveitamento por 90 minutos não significa nada — a mesma regra que já valia
+    para a razão entre linhas."""
+    with pytest.raises(ValueError, match="90 minutos"):
+        MetricSpec(
+            key="x",
+            label="x",
+            family="teste",
+            table=PlayerMatchStat,
+            aggregation=Aggregation.RATE,
+            numerator_column=PlayerMatchStat.shots_on_target,
+            value_column=PlayerMatchStat.shots_total,
+            per_90=True,
+        )
+
+
+def test_catalogo_agregado_so_vale_na_camada_agregada() -> None:
+    """Se uma delas vazasse para a camada de evento, seria calculada sobre uma tabela
+    que a fonte de eventos não preenche — e devolveria zero para todo mundo."""
+    from fscout.metrics import definitions  # noqa: F401
+    from fscout.metrics.registry import REGISTRY
+
+    agregadas = [spec for spec in REGISTRY if spec.key.endswith("_ag")]
+    assert agregadas, "o catálogo da camada agregada não foi registrado"
+    assert all(not spec.applies_to_tier(DataTier.EVENT) for spec in agregadas)
+    assert all(spec.applies_to_tier(DataTier.AGGREGATE) for spec in agregadas)
+
+
+def test_nenhuma_metrica_de_evento_vale_na_camada_agregada() -> None:
+    """As 108 são consultas sobre eventos, e evento é o que a camada agregada não tem."""
+    from fscout.metrics import definitions  # noqa: F401
+    from fscout.metrics.registry import REGISTRY
+
+    de_evento = [spec for spec in REGISTRY if not spec.key.endswith("_ag")]
+    assert all(not spec.applies_to_tier(DataTier.AGGREGATE) for spec in de_evento)
+
+
+def test_as_duas_camadas_nao_disputam_a_mesma_chave() -> None:
+    """Chave repetida faria uma métrica esconder a outra no catálogo."""
+    from fscout.metrics import definitions  # noqa: F401
+    from fscout.metrics.registry import REGISTRY
+
+    chaves = [spec.key for spec in REGISTRY]
+    assert len(chaves) == len(set(chaves))
 
 
 def test_o_que_a_migracao_promete_esta_declarado() -> None:

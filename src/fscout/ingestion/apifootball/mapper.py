@@ -73,19 +73,39 @@ def season_source_id(league_id: Any, season: Any) -> str:
     return f"{league_id}-{season}"
 
 
+# Tipo de cada competição, por id da fonte. Tabela explícita em vez de heurística, pelo
+# mesmo motivo que a tradução do vocabulário da StatsBomb é explícita: adivinhar erra em
+# silêncio. A primeira versão deduzia "país igual a World" como copa continental de
+# clubes, e classificou a **Copa América** — torneio de seleções — como competição de
+# clubes. O recorte por tipo de competição, que a especificação pede, depende disto.
+TIPOS_POR_COMPETICAO: dict[int, CompetitionType] = {
+    9: CompetitionType.INTERNATIONAL_NATIONAL_TEAM,  # Copa América
+    71: CompetitionType.NATIONAL_LEAGUE,  # Brasileirão Série A
+    72: CompetitionType.NATIONAL_LEAGUE,  # Série B
+    75: CompetitionType.NATIONAL_LEAGUE,  # Série C
+    76: CompetitionType.NATIONAL_LEAGUE,  # Série D
+    13: CompetitionType.CONTINENTAL_CLUB,  # Libertadores
+    11: CompetitionType.CONTINENTAL_CLUB,  # Sudamericana
+    73: CompetitionType.NATIONAL_CUP,  # Copa do Brasil
+}
+
+# Competições de seleção não pertencem a um país, e gravar uma sede como "país da
+# competição" faria o recorte por país devolver coisa errada.
+SEM_PAIS = frozenset(
+    {CompetitionType.INTERNATIONAL_NATIONAL_TEAM, CompetitionType.CONTINENTAL_CLUB}
+)
+
+
 def competition_row(league: dict[str, Any]) -> Row:
-    nome = str(league.get("name", ""))
-    pais = league.get("country")
-    # Copa continental da Conmebol não é liga nacional, e o recorte por tipo de
-    # competição — que a especificação pede — depende de acertar isto.
-    e_continental = str(pais).lower() in {"world", "south america"} or "conmebol" in nome.lower()
+    identificador = league.get("id")
+    tipo = TIPOS_POR_COMPETICAO.get(
+        int(identificador) if identificador is not None else -1, CompetitionType.UNKNOWN
+    )
     return {
-        "source_id": str(league.get("id")),
-        "name": nome,
-        "country_ref": None if e_continental else pais,
-        "type": CompetitionType.CONTINENTAL_CLUB
-        if e_continental
-        else CompetitionType.NATIONAL_LEAGUE,
+        "source_id": str(identificador),
+        "name": str(league.get("name", "")),
+        "country_ref": None if tipo in SEM_PAIS else league.get("country"),
+        "type": tipo,
     }
 
 

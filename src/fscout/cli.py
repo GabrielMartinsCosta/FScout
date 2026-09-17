@@ -512,7 +512,9 @@ def api_football_ligar() -> None:
     tabela.add_row(
         "Ligados", f"{relatorio.atletas_ligados} ({relatorio.cobertura:.1%} da sobreposição)"
     )
-    tabela.add_row("Duplicados fundidos", str(relatorio.atletas_fundidos))
+    tabela.add_row("Atletas duplicados fundidos", str(relatorio.atletas_fundidos))
+    tabela.add_row("Equipes fundidas", str(relatorio.equipes_fundidas))
+    tabela.add_row("Temporadas fundidas", str(relatorio.temporadas_fundidas))
     tabela.add_row("Ambíguos (recusados)", str(len(relatorio.ambiguos)))
     tabela.add_row("Com voto divergente", str(len(relatorio.conflitantes)))
     console.print(tabela)
