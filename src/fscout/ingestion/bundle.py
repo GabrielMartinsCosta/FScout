@@ -51,3 +51,6 @@ class MatchBundle:
     defensive_actions: list[Row] = field(default_factory=list)
     goalkeeper_actions: list[Row] = field(default_factory=list)
     disciplinary_actions: list[Row] = field(default_factory=list)
+    # Projeção da camada agregada. Vem vazia nas fontes de evento e é a única coisa que
+    # a fonte agregada preenche: lá a linha já chega totalizada, sem ação para projetar.
+    player_match_stats: list[Row] = field(default_factory=list)

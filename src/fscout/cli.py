@@ -454,6 +454,41 @@ def api_football_baixar(
     _mostrar_progresso(progresso, f"Competição {competicao}, temporada {temporada}", cota_diaria)
 
 
+@apifootball_app.command("carregar")
+def api_football_carregar(
+    competicao: Annotated[int, typer.Option(help="Id da competição.")] = SERIE_A_DO_BRASIL,
+    temporada: Annotated[int, typer.Option(help="Ano da temporada.")] = 2024,
+) -> None:
+    """Carrega no banco o que já está em cache. Não vai à rede, não gasta cota.
+
+    Pode rodar com o cache pela metade: partida ainda não baixada é contada e pulada.
+    """
+    from fscout.ingestion.apifootball.pipeline import carregar_temporada
+
+    try:
+        with console.status(f"Carregando {competicao}/{temporada} do cache"):
+            relatorio = carregar_temporada(competicao, temporada)
+    except FileNotFoundError as erro:
+        console.print(f"[yellow]{erro}[/yellow]")
+        raise typer.Exit(code=1) from erro
+
+    tabela = Table(title=f"{relatorio.competicao} {relatorio.temporada}", show_header=False)
+    tabela.add_row("Partidas encerradas no calendário", str(relatorio.partidas_no_calendario))
+    tabela.add_row("Carregadas", str(relatorio.partidas_carregadas))
+    tabela.add_row("Ainda sem cache", str(relatorio.partidas_sem_cache))
+    tabela.add_row("Atletas", str(relatorio.atletas))
+    tabela.add_row("Linhas de estatística", f"{relatorio.estatisticas:,}".replace(",", "."))
+    tabela.add_row("Placares divergentes", str(len(relatorio.placares_divergentes)))
+    console.print(tabela)
+
+    for divergencia in relatorio.placares_divergentes[:10]:
+        console.print(f"[yellow]placar divergente[/yellow] {divergencia}")
+    for posicao, quantas in relatorio.posicoes_desconhecidas.most_common(5):
+        console.print(f"[yellow]posição não mapeada[/yellow] {posicao} ({quantas}x)")
+    if relatorio.completa:
+        console.print("[green]Temporada inteira carregada.[/green]")
+
+
 @apifootball_app.command("lesoes")
 def api_football_lesoes(
     competicao: Annotated[int, typer.Option(help="Id da competição.")] = SERIE_A_DO_BRASIL,

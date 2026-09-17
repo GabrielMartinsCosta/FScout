@@ -692,6 +692,88 @@ class DisciplinaryAction(Base):
 # =========================================================================================
 
 
+class PlayerMatchStat(Base, SourceRefMixin):
+    """Estatística agregada de um atleta numa partida. A projeção da camada agregada.
+
+    É a sétima projeção do schema, e a única que não deriva de eventos: aqui **a linha da
+    fonte já é o total**. Existe porque não há dado de evento aberto para o futebol de
+    clubes sul-americano, e sem ela o Brasileirão ficaria fora da ferramenta.
+
+    Três cuidados que a leitura da fonte real impôs, e que estão nos nomes das colunas:
+
+    - `passes_accurate` é **contagem**, não porcentagem. A fonte chama o campo de
+      "accuracy", o que sugere percentual, mas em 124 amostras ele nunca excedeu o total
+      de passes — são passes certos. Guardar com o nome errado faria qualquer cálculo
+      posterior dividir por 100 sem motivo.
+    - `source_rating` é a nota do algoritmo **da fonte**, não do projeto. Fica gravada
+      por completude e **nenhuma métrica do catálogo é construída sobre ela**: é um
+      número de modelo fechado, e usá-lo contradiria a rastreabilidade que o trabalho
+      defende.
+    - Nulo da fonte vira zero na carga, para os campos de contagem. A fonte grava `null`
+      onde quer dizer "nenhum" em quase todos os campos (gols vêm nulos em 94% das
+      linhas) mas grava `0` explícito nos cartões. Normalizar na entrada evita que cada
+      métrica tenha que lidar com a inconsistência.
+    """
+
+    __tablename__ = "player_match_stats"
+    __table_args__ = (
+        UniqueConstraint("source", "source_id", name="uq_player_match_stat_source"),
+        Index("ix_player_match_stat_player", "player_id", "match_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"), index=True)
+    team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"))
+
+    # Contexto da atuação. A minutagem canônica fica em `appearances`, como em toda
+    # partida do sistema; aqui ficam só os números que a fonte agrega.
+    shirt_number: Mapped[int | None] = mapped_column(Integer)
+    is_captain: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_substitute: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_rating: Mapped[float | None] = mapped_column(Float)
+
+    shots_total: Mapped[int] = mapped_column(Integer, default=0)
+    shots_on_target: Mapped[int] = mapped_column(Integer, default=0)
+
+    goals: Mapped[int] = mapped_column(Integer, default=0)
+    assists: Mapped[int] = mapped_column(Integer, default=0)
+    goals_conceded: Mapped[int] = mapped_column(Integer, default=0)
+    saves: Mapped[int] = mapped_column(Integer, default=0)
+
+    passes_total: Mapped[int] = mapped_column(Integer, default=0)
+    passes_key: Mapped[int] = mapped_column(Integer, default=0)
+    passes_accurate: Mapped[int] = mapped_column(Integer, default=0)
+
+    tackles: Mapped[int] = mapped_column(Integer, default=0)
+    blocks: Mapped[int] = mapped_column(Integer, default=0)
+    interceptions: Mapped[int] = mapped_column(Integer, default=0)
+
+    duels_total: Mapped[int] = mapped_column(Integer, default=0)
+    duels_won: Mapped[int] = mapped_column(Integer, default=0)
+
+    dribbles_attempted: Mapped[int] = mapped_column(Integer, default=0)
+    dribbles_successful: Mapped[int] = mapped_column(Integer, default=0)
+    dribbled_past: Mapped[int] = mapped_column(Integer, default=0)
+
+    fouls_drawn: Mapped[int] = mapped_column(Integer, default=0)
+    fouls_committed: Mapped[int] = mapped_column(Integer, default=0)
+
+    yellow_cards: Mapped[int] = mapped_column(Integer, default=0)
+    red_cards: Mapped[int] = mapped_column(Integer, default=0)
+
+    penalties_won: Mapped[int] = mapped_column(Integer, default=0)
+    penalties_committed: Mapped[int] = mapped_column(Integer, default=0)
+    penalties_scored: Mapped[int] = mapped_column(Integer, default=0)
+    penalties_missed: Mapped[int] = mapped_column(Integer, default=0)
+    penalties_saved: Mapped[int] = mapped_column(Integer, default=0)
+
+    offsides: Mapped[int] = mapped_column(Integer, default=0)
+
+    match: Mapped[Match] = relationship()
+    player: Mapped[Player] = relationship()
+
+
 class Injury(Base):
     """Lesão do atleta.
 

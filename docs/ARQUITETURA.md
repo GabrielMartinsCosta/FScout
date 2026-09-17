@@ -425,7 +425,8 @@ FScout/
 │   │   └── pitch.py           Zonas, distâncias, ângulos, progressão
 │   ├── db/
 │   │   ├── base.py            Base declarativa e mixins
-│   │   ├── models.py          Schema (22 tabelas)
+│   │   ├── models.py          Schema (23 tabelas)
+│   │   ├── migrations.py      Acréscimo de colunas em banco carregado, sem Alembic
 │   │   └── session.py         Engine, sessão, PRAGMAs do SQLite
 │   ├── linking/               Decidir quando dois registros são a mesma entidade
 │   │   ├── names.py           Normalização e comparação de nomes
@@ -441,7 +442,8 @@ FScout/
 │   │   ├── openmeteo.py       Clima histórico por coordenada e hora
 │   │   ├── weather.py         Localiza estádios e grava o clima das partidas
 │   │   ├── statsbomb/         Cliente, vocabulário, relógio, encadeamentos, mapeador
-│   │   └── transfermarkt/     Cliente, ligador, enriquecimento, orquestração
+│   │   ├── transfermarkt/     Cliente, ligador, enriquecimento, orquestração
+│   │   └── apifootball/       Camada agregada: cliente com cota, sondagem, baixador, mapeador
 │   ├── metrics/               Catálogo e motor de métricas (Fase 2)
 │   ├── api/                   Contrato HTTP
 │   │   ├── deps.py            Sessão por requisição e recorte vindo da consulta

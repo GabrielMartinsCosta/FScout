@@ -34,6 +34,7 @@ from fscout.db.models import (
     Pass,
     Player,
     PlayerClubSpell,
+    PlayerMatchStat,
     PlayerNationality,
     Season,
     Shot,
@@ -233,6 +234,16 @@ class Loader:
         for model, rows, extra_refs in projections:
             _bulk_insert(session, model, rows, match_scope, {**common, **extra_refs})
 
+        # A projeção da camada agregada fica fora do laço acima porque não tem evento a
+        # que se referir: na fonte agregada a linha já chega totalizada.
+        _bulk_insert(
+            session,
+            PlayerMatchStat,
+            bundle.player_match_stats,
+            match_scope,
+            {"player_ref": ("player_id", player_ids), "team_ref": ("team_id", team_ids)},
+        )
+
         return MatchLoadResult(
             match_id=match_id,
             events=len(bundle.events),
@@ -242,6 +253,7 @@ class Loader:
     def _delete_match_facts(self, match_id: int) -> None:
         for model in PROJECTIONS:
             self._session.execute(delete(model).where(model.match_id == match_id))
+        self._session.execute(delete(PlayerMatchStat).where(PlayerMatchStat.match_id == match_id))
         self._session.execute(delete(Event).where(Event.match_id == match_id))
         self._session.execute(delete(Appearance).where(Appearance.match_id == match_id))
 
