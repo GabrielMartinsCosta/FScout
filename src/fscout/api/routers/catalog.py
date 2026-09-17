@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from fscout.api.schemas import MetricDefinitionOut
-from fscout.domain.enums import PositionGroup
+from fscout.domain.enums import DataTier, PositionGroup
 from fscout.metrics.registry import REGISTRY, CompositeSpec, Spec
 
 router = APIRouter(prefix="/catalog", tags=["catálogo"])
@@ -26,6 +26,7 @@ def to_definition(spec: Spec) -> MetricDefinitionOut:
         per_90=spec.per_90,
         higher_is_better=spec.higher_is_better,
         positions=list(spec.positions),
+        data_tiers=list(spec.data_tiers),
         min_sample=0 if composta else spec.min_sample,
         inputs=list(spec.inputs) if composta else [],
         description=spec.description,
@@ -36,12 +37,21 @@ def to_definition(spec: Spec) -> MetricDefinitionOut:
 def list_metrics(
     family: str | None = None,
     position: PositionGroup | None = None,
+    data_tier: DataTier | None = None,
 ) -> list[MetricDefinitionOut]:
+    """O catálogo, opcionalmente recortado.
+
+    `data_tier` importa: métrica de uma granularidade não se calcula na outra, e uma tela
+    que oferecesse "gols de fora da área" sobre dado agregado prometeria o que a fonte
+    não tem.
+    """
     specs = REGISTRY.by_family(family) if family else tuple(REGISTRY)
     if family and not specs:
         raise HTTPException(404, f"família desconhecida: {family}")
     if position is not None:
         specs = tuple(spec for spec in specs if spec.applies_to(position))
+    if data_tier is not None:
+        specs = tuple(spec for spec in specs if spec.applies_to_tier(data_tier))
     return [to_definition(spec) for spec in specs]
 
 

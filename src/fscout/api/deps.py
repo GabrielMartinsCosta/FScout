@@ -10,7 +10,7 @@ from fastapi import Depends, Query
 from sqlalchemy.orm import Session
 
 from fscout.db.session import get_session_factory
-from fscout.domain.enums import CompetitionType, HomeAway, PositionGroup
+from fscout.domain.enums import CompetitionType, DataTier, HomeAway, PositionGroup
 from fscout.metrics.context import Slice
 
 
@@ -32,6 +32,7 @@ def slice_from_query(
     home_away: HomeAway | None = None,
     min_minutes: int | None = None,
     label: str | None = None,
+    data_tier: DataTier = DataTier.EVENT,
 ) -> Slice:
     """Monta o recorte a partir dos parâmetros de consulta.
 
@@ -50,6 +51,7 @@ def slice_from_query(
         home_away=home_away,
         min_minutes=min_minutes,
         label=label,
+        data_tier=data_tier,
     )
 
 

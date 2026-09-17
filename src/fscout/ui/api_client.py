@@ -96,9 +96,15 @@ def equipes(competition_id: int | None = None) -> list[dict[str, Any]]:
 
 
 # -- catálogo -----------------------------------------------------------------------
-def catalogo(family: str | None = None, position: str | None = None) -> list[dict[str, Any]]:
+def catalogo(
+    family: str | None = None, position: str | None = None, data_tier: str | None = None
+) -> list[dict[str, Any]]:
     """As definições das métricas. A tela se monta a partir daqui, não de listas fixas."""
-    return _pedir("GET", "/catalog", params=limpar({"family": family, "position": position}))
+    return _pedir(
+        "GET",
+        "/catalog",
+        params=limpar({"family": family, "position": position, "data_tier": data_tier}),
+    )
 
 
 def familias() -> dict[str, int]:

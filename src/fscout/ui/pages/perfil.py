@@ -21,6 +21,7 @@ from dash import Input, Output, dash_table, dcc, html
 from fscout.ui import api_client
 from fscout.ui.components import tiles
 from fscout.ui.components.filters import Ids as FiltroIds
+from fscout.ui.figures import aviso_no_lugar_do_grafico
 from fscout.ui.figures import goal_mouth as figura_da_boca
 from fscout.ui.figures import heatmap as figura_de_calor
 from fscout.ui.figures import pass_map as figura_de_passes
@@ -80,27 +81,59 @@ def filtrar_chutes(chutes: list[dict[str, Any]], subconjunto: str) -> list[dict[
     return chutes
 
 
-# Métricas dos cartões, por posição. Chaves do catálogo, não texto livre.
-CARTOES_LINHA = (
-    "gols",
-    "assistencias",
-    "xg",
-    "participacao_em_gols",
-    "aproveitamento_de_passes",
-    "acoes_defensivas",
-)
-CARTOES_GOLEIRO = (
-    "defesas",
-    "gols_sofridos",
-    "aproveitamento_em_defesas",
-    "gols_evitados",
-    "defesas_de_penalti",
-    "saidas_do_gol",
+# Métricas dos cartões, por posição e por granularidade. Chaves do catálogo, não texto
+# livre. As duas camadas precisam de listas próprias porque não compartilham chave
+# nenhuma: "xG" e "gols evitados" não existem sobre dado agregado, e pedir por elas ali
+# devolveria um cartão vazio sem explicação.
+CARTOES = {
+    ("event", "goalkeeper"): (
+        "defesas",
+        "gols_sofridos",
+        "aproveitamento_em_defesas",
+        "gols_evitados",
+        "defesas_de_penalti",
+        "saidas_do_gol",
+    ),
+    ("event", "linha"): (
+        "gols",
+        "assistencias",
+        "xg",
+        "participacao_em_gols",
+        "aproveitamento_de_passes",
+        "acoes_defensivas",
+    ),
+    ("aggregate", "goalkeeper"): (
+        "defesas_ag",
+        "gols_sofridos_ag",
+        "aproveitamento_em_defesas_ag",
+        "defesas_de_penalti_ag",
+        "passes_certos_ag",
+        "duelos_ganhos_ag",
+    ),
+    ("aggregate", "linha"): (
+        "gols_ag",
+        "assistencias_ag",
+        "participacao_em_gols_ag",
+        "aproveitamento_de_passes_ag",
+        "aproveitamento_em_duelos_ag",
+        "acoes_defensivas_ag",
+    ),
+}
+
+CAMADA_PADRAO = "event"
+
+# O que a camada agregada não tem, dito onde o gráfico estaria.
+SEM_COORDENADA = (
+    "A fonte de totais por partida não registra onde cada ação aconteceu.<br>"
+    "Sem coordenada não há mapa de chutes, de passes, de calor nem boca do gol.<br><br>"
+    "Troque a granularidade para <b>evento a evento</b> para ver os mapas."
 )
 
 
-def metricas_do_perfil(posicao: str | None) -> tuple[str, ...]:
-    return CARTOES_GOLEIRO if posicao == "goalkeeper" else CARTOES_LINHA
+def metricas_do_perfil(posicao: str | None, camada: str = CAMADA_PADRAO) -> tuple[str, ...]:
+    """Cartões apropriados à posição e à granularidade do dado."""
+    setor = "goalkeeper" if posicao == "goalkeeper" else "linha"
+    return CARTOES.get((camada, setor), CARTOES[(CAMADA_PADRAO, setor)])
 
 
 def cartao_de_grafico(
@@ -505,13 +538,20 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
                 "",
             )
 
+        camada = str((recorte or {}).get("data_tier") or CAMADA_PADRAO)
+        tem_coordenada = camada == CAMADA_PADRAO
+
         try:
             perfil = api_client.atleta(player_id)
-            chutes = api_client.chutes(player_id, recorte)
-            passes = api_client.passes(player_id, recorte)
-            celulas = api_client.mapa_de_calor(player_id, recorte)
+            # Buscar chute, passe e grade de calor na camada agregada devolveria listas
+            # vazias e gastaria três requisições para provar o que já se sabe.
+            chutes = api_client.chutes(player_id, recorte) if tem_coordenada else []
+            passes = api_client.passes(player_id, recorte) if tem_coordenada else []
+            celulas = api_client.mapa_de_calor(player_id, recorte) if tem_coordenada else []
+            # O mapa-múndi vale nas duas: ele agrega participações por país do
+            # adversário, e participação existe em qualquer granularidade.
             paises = api_client.paises(player_id, recorte)
-            chaves = metricas_do_perfil(str(perfil.get("position_group") or ""))
+            chaves = metricas_do_perfil(str(perfil.get("position_group") or ""), camada)
             definicoes = {
                 definicao["key"]: definicao
                 for definicao in api_client.catalogo()
@@ -614,20 +654,35 @@ def registrar(app: Any, mode: Mode | str = "light") -> None:
             )
         resumo_mundi += "."
 
+        if not tem_coordenada:
+            # "0 finalizações no recorte" seria uma afirmação sobre o atleta; o que há é
+            # uma ausência da fonte. São coisas diferentes e o texto precisa distinguir.
+            aviso = "Esta granularidade não traz a posição das ações."
+            resumo = resumo_boca = resumo_passes = aviso
+
         colunas_calor, linhas_calor = _tabela_de_calor(celulas)
+        # Sem coordenada, o lugar do mapa recebe a explicação do porquê. Um campo vazio
+        # diria "o atleta não fez isso"; o texto diz "a fonte não registra isso".
+        sem_mapa = aviso_no_lugar_do_grafico(SEM_COORDENADA, mode)
         return (
             tiles.ficha(perfil, mode),
             cartoes,
-            figura_de_chutes.mapa_de_chutes(escolhidos, mode),
+            figura_de_chutes.mapa_de_chutes(escolhidos, mode) if tem_coordenada else sem_mapa,
             COLUNAS_DE_CHUTES,
             _linhas_de_chutes(escolhidos),
-            figura_de_calor.mapa_de_calor(celulas, mode),
+            figura_de_calor.mapa_de_calor(celulas, mode) if tem_coordenada else sem_mapa,
             colunas_calor,
             linhas_calor,
             resumo,
-            figura_da_boca.boca_do_gol(escolhidos, mode, perspectiva),
+            (
+                figura_da_boca.boca_do_gol(escolhidos, mode, perspectiva)
+                if tem_coordenada
+                else aviso_no_lugar_do_grafico(SEM_COORDENADA, mode, altura=330)
+            ),
             resumo_boca,
-            figura_de_passes.mapa_de_passes(passes_escolhidos, mode),
+            figura_de_passes.mapa_de_passes(passes_escolhidos, mode)
+            if tem_coordenada
+            else sem_mapa,
             COLUNAS_DE_PASSES,
             _linhas_de_passes(passes_escolhidos),
             resumo_passes,

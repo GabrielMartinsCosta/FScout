@@ -37,16 +37,33 @@ class Ids:
     TABELA = "comparar-tabela"
 
 
-METRICAS_PADRAO = (
-    "gols",
-    "assistencias",
-    "xg",
-    "passes_progressivos",
-    "dribles_certos",
-    "acoes_defensivas",
-    "duelos_aereos_ganhos",
-    "aproveitamento_de_passes",
-)
+# Métricas iniciais do radar, por granularidade. As duas listas não têm chave em comum
+# porque as camadas não compartilham métrica nenhuma: escolher a camada troca o conjunto
+# inteiro, e não um subconjunto.
+METRICAS_PADRAO = {
+    "event": (
+        "gols",
+        "assistencias",
+        "xg",
+        "passes_progressivos",
+        "dribles_certos",
+        "acoes_defensivas",
+        "duelos_aereos_ganhos",
+        "aproveitamento_de_passes",
+    ),
+    "aggregate": (
+        "gols_ag",
+        "assistencias_ag",
+        "finalizacoes_ag",
+        "passes_decisivos_ag",
+        "dribles_certos_ag",
+        "acoes_defensivas_ag",
+        "duelos_ganhos_ag",
+        "aproveitamento_de_passes_ag",
+    ),
+}
+
+CAMADA_PADRAO = "event"
 
 MODOS = [
     {"label": "Valor", "value": "valor"},
@@ -56,16 +73,24 @@ MODOS = [
 ROTULO_BASE = "Recorte principal"
 
 
+def opcoes_de_metrica(camada: str) -> list[dict[str, Any]]:
+    """Métricas que existem naquela granularidade, e só elas.
+
+    Oferecer "gols de fora da área" sobre dado agregado prometeria o que a fonte não tem:
+    o seletor não deve listar o que o motor vai recusar.
+    """
+    try:
+        catalogo = api_client.catalogo(data_tier=camada)
+    except (api_client.ApiIndisponivel, api_client.ErroDaApi):
+        return []
+    return [
+        {"label": f"{definicao['label']} · {definicao['family']}", "value": definicao["key"]}
+        for definicao in catalogo
+    ]
+
+
 def layout(mode: Mode | str = "light") -> html.Div:
     t = tokens(mode)
-    try:
-        opcoes_de_metrica = [
-            {"label": f"{definicao['label']} · {definicao['family']}", "value": definicao["key"]}
-            for definicao in api_client.catalogo()
-        ]
-    except (api_client.ApiIndisponivel, api_client.ErroDaApi):
-        opcoes_de_metrica = []
-
     return html.Div(
         [
             html.Div(
@@ -78,12 +103,9 @@ def layout(mode: Mode | str = "light") -> html.Div:
                     ),
                     campo(
                         "Métricas",
-                        dcc.Dropdown(
-                            id=Ids.METRICAS,
-                            options=opcoes_de_metrica,
-                            value=list(METRICAS_PADRAO),
-                            multi=True,
-                        ),
+                        # Opções e seleção vêm do callback, porque dependem da camada
+                        # escolhida na barra de recortes.
+                        dcc.Dropdown(id=Ids.METRICAS, multi=True),
                         t,
                         "460px",
                     ),
@@ -212,6 +234,29 @@ def montar_recortes(
 
 
 def registrar(app: Any, mode: Mode | str = "light") -> None:
+    @app.callback(
+        Output(Ids.METRICAS, "options"),
+        Output(Ids.METRICAS, "value"),
+        Input(FiltroIds.ARMAZEM, "data"),
+    )
+    def _metricas_da_camada(
+        recorte: dict[str, Any] | None,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Trocar a granularidade troca o conjunto inteiro de métricas.
+
+        A seleção é reposta, e não preservada, porque nenhuma chave sobrevive à troca:
+        manter a anterior deixaria o radar pedindo métricas que a camada nova não tem.
+        """
+        camada = str((recorte or {}).get("data_tier") or CAMADA_PADRAO)
+        opcoes = opcoes_de_metrica(camada)
+        disponiveis = {opcao["value"] for opcao in opcoes}
+        padrao = [
+            chave
+            for chave in METRICAS_PADRAO.get(camada, METRICAS_PADRAO[CAMADA_PADRAO])
+            if chave in disponiveis
+        ]
+        return opcoes, padrao
+
     @app.callback(
         Output(Ids.ATLETAS, "options"),
         Input(FiltroIds.ARMAZEM, "data"),

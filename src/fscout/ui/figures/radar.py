@@ -26,6 +26,7 @@ from typing import Any
 
 import plotly.graph_objects as go
 
+from fscout.ui.figures import aviso_no_lugar_do_grafico
 from fscout.ui.format import formatar_valor, quebrar, rotulo
 from fscout.ui.theme import (
     LARGURA_ANEL,
@@ -45,27 +46,7 @@ OPACIDADE_DA_AREA = 0.10  # lavagem, não bloco saturado
 
 
 def _sem_dados(mensagem: str, mode: Mode | str, altura: int) -> go.Figure:
-    t = tokens(mode)
-    figura = go.Figure()
-    figura.update_layout(
-        height=altura,
-        paper_bgcolor=t.surface,
-        plot_bgcolor=t.surface,
-        xaxis={"visible": False},
-        yaxis={"visible": False},
-        annotations=[
-            {
-                "text": mensagem,
-                "showarrow": False,
-                "font": {"color": t.muted, "size": 13},
-                "x": 0.5,
-                "y": 0.5,
-                "xref": "paper",
-                "yref": "paper",
-            }
-        ],
-    )
-    return figura
+    return aviso_no_lugar_do_grafico(mensagem, mode, altura)
 
 
 def radar(

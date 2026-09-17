@@ -134,6 +134,7 @@ def criar_app(mode: Mode | str = "light") -> Dash:
         Input(FiltroIds.PERIODO, "end_date"),
         Input(FiltroIds.MANDO, "value"),
         Input(FiltroIds.MINUTOS, "value"),
+        Input(FiltroIds.CAMADA, "value"),
     )
     def _recorte(
         competition_ids: list[int] | None,
@@ -142,8 +143,11 @@ def criar_app(mode: Mode | str = "light") -> Dash:
         fim: str | None,
         mando: str | None,
         minutos: int | None,
+        camada: str | None,
     ) -> dict[str, Any]:
-        return filters.montar_recorte(competition_ids, season_ids, inicio, fim, mando, minutos)
+        return filters.montar_recorte(
+            competition_ids, season_ids, inicio, fim, mando, minutos, camada
+        )
 
     perfil.registrar(app, mode)
     comparar.registrar(app, mode)

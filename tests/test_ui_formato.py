@@ -156,9 +156,16 @@ def test_preenchimento_de_area_e_lavagem_e_nao_bloco() -> None:
 
 
 def test_campo_vazio_nao_vira_filtro() -> None:
-    """Ausência e "tudo" são a mesma coisa para o `Slice`."""
-    assert filters.montar_recorte() == {}
-    assert filters.montar_recorte(competition_ids=[], season_ids=None) == {}
+    """Ausência e "tudo" são a mesma coisa para o `Slice` — menos para a camada."""
+    assert filters.montar_recorte() == {"data_tier": "event"}
+    assert filters.montar_recorte(competition_ids=[], season_ids=None) == {"data_tier": "event"}
+
+
+def test_a_camada_viaja_sempre_no_recorte() -> None:
+    """Único campo que não some quando vazio: camada nunca significa "as duas", e omiti-la
+    deixaria o padrão do servidor decidir uma coisa que a tela já escolheu."""
+    assert filters.montar_recorte()["data_tier"] == "event"
+    assert filters.montar_recorte(data_tier="aggregate")["data_tier"] == "aggregate"
 
 
 def test_mando_todos_nao_restringe() -> None:
@@ -169,6 +176,7 @@ def test_mando_todos_nao_restringe() -> None:
 def test_recorte_reune_os_campos_preenchidos() -> None:
     recorte = filters.montar_recorte(competition_ids=[1], date_from="2024-06-20", min_minutes=270)
     assert recorte == {
+        "data_tier": "event",
         "competition_ids": [1],
         "date_from": "2024-06-20",
         "min_minutes": 270,

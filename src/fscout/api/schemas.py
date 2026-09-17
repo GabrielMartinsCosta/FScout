@@ -10,7 +10,7 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
-from fscout.domain.enums import CompetitionType, HomeAway, PositionGroup
+from fscout.domain.enums import CompetitionType, DataTier, HomeAway, PositionGroup
 from fscout.metrics.context import Slice
 
 
@@ -29,6 +29,9 @@ class SliceIn(BaseModel):
     home_away: HomeAway | None = None
     min_minutes: int | None = None
     label: str | None = None
+    # Camada de dado. Uma só, com evento por padrão: recorte que atravessasse camadas
+    # somaria gol contado a partir de evento com gol vindo de total agregado.
+    data_tier: DataTier = DataTier.EVENT
 
     def to_slice(self) -> Slice:
         return Slice(
@@ -44,6 +47,7 @@ class SliceIn(BaseModel):
             home_away=self.home_away,
             min_minutes=self.min_minutes,
             label=self.label,
+            data_tier=self.data_tier,
         )
 
 
@@ -58,6 +62,9 @@ class MetricDefinitionOut(BaseModel):
     per_90: bool
     higher_is_better: bool
     positions: list[PositionGroup]
+    # Em que granularidade de dado a métrica existe. A tela usa isto para dizer o que
+    # ficou de fora, em vez de simplesmente não mostrar.
+    data_tiers: list[DataTier] = Field(default_factory=list)
     min_sample: int = 0
     inputs: list[str] = Field(default_factory=list)
     description: str = ""

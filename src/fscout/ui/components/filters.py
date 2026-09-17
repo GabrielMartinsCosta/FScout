@@ -29,7 +29,17 @@ class Ids:
     PERIODO = "recorte-periodo"
     MANDO = "recorte-mando"
     MINUTOS = "recorte-minutos"
+    CAMADA = "recorte-camada"
     ARMAZEM = "recorte-armazem"
+
+
+# Granularidade do dado. Fica no mesmo lugar dos outros filtros porque delimita a
+# análise do mesmo jeito que eles — e porque escolher uma de cada vez é o que impede
+# somar gol contado evento a evento com gol vindo de um total já agregado.
+CAMADAS = [
+    {"label": "Evento a evento", "value": "event"},
+    {"label": "Totais por partida", "value": "aggregate"},
+]
 
 
 MANDOS = [
@@ -80,6 +90,12 @@ def barra(competicoes: list[dict[str, Any]], mode: Mode | str = "light") -> html
     t = tokens(mode)
     return html.Div(
         [
+            campo(
+                "Granularidade do dado",
+                dcc.Dropdown(id=Ids.CAMADA, options=CAMADAS, value="event", clearable=False),
+                t,
+                "210px",
+            ),
             campo(
                 "Competição",
                 dcc.Dropdown(
@@ -155,12 +171,14 @@ def montar_recorte(
     date_to: str | None = None,
     home_away: str | None = None,
     min_minutes: int | None = None,
+    data_tier: str | None = None,
 ) -> dict[str, Any]:
     """Traduz os controles para o recorte que a API entende.
 
-    Campo vazio não vira filtro: ausência e "tudo" são a mesma coisa para o `Slice`.
+    Campo vazio não vira filtro: ausência e "tudo" são a mesma coisa para o `Slice` —
+    com uma exceção, a camada, que sempre viaja porque nunca significa "as duas".
     """
-    recorte: dict[str, Any] = {}
+    recorte: dict[str, Any] = {"data_tier": data_tier or "event"}
     if competition_ids:
         recorte["competition_ids"] = competition_ids
     if season_ids:
