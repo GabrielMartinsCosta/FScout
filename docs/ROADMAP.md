@@ -248,6 +248,58 @@ Conferido contra o banco real: as 11 finalizações de Lautaro Martínez na Copa
 saem no mapa como **5 gols**, 3 no alvo e 3 para fora — e os 5 gols são a artilharia
 oficial do torneio. A comparação com segundo recorte isola a janela de 20 a 30 de junho.
 
+## Fase 4b — A camada agregada · Semana 2 — **concluída**
+
+Fase que não estava no plano. Ela nasceu de uma correção de rumo: o objetivo declarado
+passou a ser **cobertura real do futebol sul-americano**, e a ferramenta só enxergava
+competições europeias e de seleções.
+
+O fato duro que a governou: **não existe dado de evento aberto para o futebol de clubes
+sul-americano**. Esse dado é produzido por pessoas assistindo à partida e marcando cada
+ação, e é vendido sob contrato — empresas como a Sofascore licenciam de provedores, não
+obtêm de graça. A limitação é econômica, não de pesquisa.
+
+- [x] Sondagem que mede o que a fonte cobre **antes** de qualquer adaptador ser escrito
+- [x] Camada de dado no schema, com recorte que nomeia uma só granularidade
+- [x] Baixador desenhado para a cota diária, retomável pelo próprio cache
+- [x] Adaptador, com a projeção `player_match_stats`
+- [x] Ligação da quarta fonte ao elenco canônico, com fusão de atletas, equipes e temporadas
+- [x] 36 métricas agregadas e a agregação `RATE` que elas exigiram
+- [x] Interface com seletor de granularidade
+
+| Medida | Resultado |
+|---|---|
+| Temporadas acessíveis no plano gratuito | Brasileirão e Libertadores, 2022 a 2024 |
+| Estatísticas por jogador e partida | 33 campos, 11 grupos |
+| Catálogo | 144 métricas: 108 evento + 36 agregado |
+| Ligação pela competição compartilhada | 338 de 338 atletas (100%), zero ambíguos |
+| Entidades fundidas | 338 atletas, 16 equipes, 1 temporada |
+
+**A validação mais forte do projeto veio daqui**, e de graça: as duas camadas concordam
+na artilharia da Copa América — Lautaro 5, Rondón 3, Julián Álvarez 2 —, vindas de fontes
+independentes por caminhos de cálculo completamente diferentes, uma somando finalizações
+evento a evento e outra lendo totais já agregados.
+
+**O achado que virou mecanismo.** A Copa América de 2024 existe nas duas fontes. Ligados
+os identificadores ali, os mesmos reaparecem no Brasileirão, onde não há âncora nenhuma,
+e o carregador reaproveita o atleta canônico sozinho. Sete atletas do Brasileirão já
+chegaram unificados com o registro de seleção a partir de quatro partidas carregadas —
+James Rodríguez, Sergio Rochet, Jhon Arias, Rafael Borré, Santiago Arias, Nahuel
+Ferraresi e José Hurtado. Exatamente a população-alvo.
+
+Cinco defeitos que só a execução contra dado real revelou:
+
+- O filtro de partida encerrada aceitava só `FT` e descartava `AET` e `PEN`, escondendo
+  cinco jogos da Copa América — **inclusive a final**. Não aparece em liga nacional, onde
+  tudo termina em 90 minutos.
+- `passes.accuracy` parece porcentagem pelo nome e é contagem: em 124 amostras nunca
+  excedeu o total de passes.
+- A fonte atribui o identificador 65657 a duas pessoas na mesma partida.
+- A fusão de atletas falhava com violação de chave estrangeira por causa de uma passagem
+  por clube *derivada* pelo próprio pipeline.
+- A heurística de tipo classificou a Copa América, torneio de seleções, como competição
+  de clubes.
+
 ## Fase 5 — Consolidação · Semanas 10 e 11
 
 - API-Football: histórico de lesões e totais do Brasileirão, respeitando a cota diária
@@ -296,14 +348,19 @@ faltante — é assim que se apresenta numa defesa.
 
 ## Próximo passo imediato
 
-Fase 5, a consolidação, já que a Fase 4 fechou:
+Fase 5, a consolidação:
 
-1. **Roteiro de reprodução** — do clone à primeira tela. É o que permite a alguém de fora
-   verificar o trabalho, e hoje os passos estão espalhados entre o README e os commits.
-2. **Testes de ponta a ponta** — a cadeia ingestão → métrica → API → figura tem cobertura
-   em cada elo, mas não de uma ponta à outra.
-3. **API-Football** — histórico de lesões e totais do Brasileirão, respeitando a cota
-   diária. É o último item de dados que a especificação pedia e nenhuma fonte atual cobre.
-4. **Redação** — metodologia, resultados e limitações.
+1. [x] **Roteiro de reprodução** — [`REPRODUCAO.md`](REPRODUCAO.md), do clone à primeira
+   tela, com o número esperado em cada etapa. É o que permite a alguém de fora verificar o
+   trabalho em vez de acreditar nele.
+2. [ ] **Carga completa do Brasileirão** — quatro dias de cota gratuita, ou uma tarde no
+   plano pago. Hoje há quatro partidas carregadas, o bastante para a ferramenta funcionar
+   e pouco para ela demonstrar.
+3. [ ] **Histórico de lesões** — a tabela existe desde a Fase 0, vazia. O endpoint
+   devolveu 1.668 registros só no Brasileirão de 2024, e vem paginado.
+4. [ ] **Testes de ponta a ponta** — a cadeia ingestão → métrica → API → figura tem
+   cobertura em cada elo, mas não de uma ponta à outra.
+5. [ ] **Redação** — metodologia, resultados e limitações.
 
-O catálogo como anexo de metodologia já sai pronto em `fscout catalogo --csv`.
+O catálogo como anexo de metodologia já sai pronto em `fscout catalogo --csv`: 144
+definições operacionais, com a granularidade de cada uma declarada.

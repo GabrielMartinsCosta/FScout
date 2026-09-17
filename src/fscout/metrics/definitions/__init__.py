@@ -10,7 +10,6 @@ dos arquivos.
 """
 
 from fscout.metrics.definitions import (
-    aggregate,
     defending,
     discipline,
     dribbling,
@@ -21,6 +20,10 @@ from fscout.metrics.definitions import (
 )
 
 from fscout.metrics.definitions import composites  # isort: skip  (depende das anteriores)
+
+# A camada agregada entra por último, e a ordem importa: o catálogo exportado é a tabela
+# de definições operacionais da metodologia, e nela a camada principal vem primeiro.
+from fscout.metrics.definitions import aggregate  # isort: skip
 
 __all__ = [
     "aggregate",

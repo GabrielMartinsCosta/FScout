@@ -136,6 +136,47 @@ Duas, ambas de valores derivados na ingestão e nunca editados depois:
 
 ---
 
+### Granularidade do dado: as duas origens que não se somam
+
+Não existe dado de evento aberto para o futebol de clubes sul-americano. Esse dado é
+produzido por pessoas assistindo à partida e marcando cada ação, e é vendido sob
+contrato — a limitação é econômica, não técnica. Para cobrir Brasileirão e Libertadores,
+o projeto admite uma segunda origem, de granularidade menor, e a distingue explicitamente.
+
+| | Camada de evento | Camada agregada |
+|---|---|---|
+| Unidade | uma linha por ação, com coordenada | uma linha por atleta e partida |
+| Tabelas | `events` e seis projeções | `player_match_stats` |
+| Métricas | 108 | 36 |
+| Mapas de campo | sim | **não**: sem coordenada |
+| xG, pé utilizado, comprimento de passe | sim | **não** |
+
+**A regra que governa tudo: as duas nunca se comparam em silêncio.** "Finalizações fora
+da área" existe numa e não na outra, e um total que misturasse as duas subcontaria sem
+sintoma. Três mecanismos impedem isso, e nenhum depende de quem escreve a consulta
+lembrar de conferir:
+
+1. **A camada é gravada na partida** (`matches.data_tier`). Toda partida vem inteira de
+   uma fonte, e dali a marca alcança qualquer consulta — todo recorte já passa por
+   `matches`.
+2. **O recorte nomeia uma camada, nunca um conjunto**, com evento por padrão. Assim
+   minutagem, métrica e percentil de uma avaliação saem todos da mesma granularidade
+   *por construção*. A condição entra em `appearance_conditions` mesmo sem ninguém pedir.
+3. **Cada métrica declara em que camadas existe.** O motor omite a que não se calcula na
+   camada pedida, e `metricas_fora_da_camada` permite à tela **nomear** o que ficou de
+   fora — sumir calado faria o leitor concluir que o atleta não tem aquela ação, quando o
+   caso é que a fonte não registra aquilo.
+
+A entidade, porém, é uma só. Atleta, equipe e competição que as duas fontes descrevem são
+fundidos num registro canônico, com a partida compartilhada servindo de âncora. Sergio
+Rochet é um registro com Copa do Mundo e Copa América na camada de evento e Brasileirão
+na agregada.
+
+**O efeito colateral que virou mecanismo.** A Copa América de 2024 existe nas duas
+fontes. Ligados os identificadores ali, os mesmos reaparecem nas partidas do Brasileirão,
+onde não há âncora nenhuma, e o carregador reaproveita o atleta canônico sozinho. A
+competição compartilhada não serve só para conferir a ligação — ela **é** a ligação.
+
 ## 4. Do pedido ao modelo: como cada família é calculada
 
 A tabela abaixo é o contrato entre a especificação e a implementação. Vale como anexo do TCC.
@@ -318,9 +359,22 @@ Um TCC ganha credibilidade ao delimitar o que *não* faz. Estas são as fronteir
 
 **Limitações da fonte:**
 
-- **Cobertura.** A StatsBomb Open Data não inclui o Campeonato Brasileiro. Jogadores da
-  seleção brasileira aparecem com dados evento a evento na Copa América 2024. Para o
-  Brasileirão, a fonte avaliada (API-Football) entrega apenas estatística agregada.
+- **Cobertura do futebol brasileiro.** A StatsBomb Open Data não inclui o Brasileirão, e
+  nenhuma fonte aberta inclui. O projeto o cobre pela camada agregada, com granularidade
+  menor: 36 métricas em vez de 108, e **nenhum mapa de campo**, porque a fonte não traz
+  coordenada. A diferença fica declarada na tela, onde o gráfico seria — e não escondida
+  atrás de um campo vazio, que diria "o atleta não fez isso" quando o caso é "a fonte não
+  registra isso".
+- **Atraso do dado de evento.** O mais recente do projeto é de julho de 2024. Não é
+  escolha: o catálogo aberto da StatsBomb tem 80 temporadas e só uma é de 2025 ou
+  posterior, e o plano gratuito do API-Football para em 2024. Dado de evento recente é
+  produzido por trabalho humano e vendido sob contrato.
+- **A nota da fonte agregada não vira métrica.** `source_rating` fica gravada por
+  completude e nenhuma métrica do catálogo se apoia nela: é resultado de um modelo
+  fechado, e usá-la contradiria a rastreabilidade que o trabalho defende.
+- **Defeitos de identidade na fonte agregada.** Um identificador aparece atribuído a duas
+  pessoas na mesma partida (65657, como "Jesús Sagredo" e "José Sagredo"). A carga mantém
+  a primeira ocorrência e **relata** o caso, em vez de descartá-lo em silêncio.
 - **Ficha básica incompleta na fonte primária.** A StatsBomb não informa data de nascimento,
   altura, peso nem pé preferencial. Idade, altura e pé dependem da ligação com o
   Transfermarkt; peso não tem fonte aberta confiável.
@@ -410,6 +464,13 @@ modelo de xG próprio, segunda fonte de eventos (Wyscout).
 | 36 | O recorte nomeia **uma** camada, com evento por padrão | Recorte que atravessasse camadas somaria gol de evento com gol de total agregado e dividiria por minutagem misturada | Aceitar um conjunto de camadas e tratar os casos |
 | 37 | A métrica declara em que camadas existe | "Finalizações fora da área" precisa de coordenada; sobre dado agregado não vale zero, vale desconhecido | Calcular tudo e deixar dar zero |
 | 38 | Acréscimo de coluna por lista explícita, sem Alembic | Recarregar 662 mil eventos por uma coluna com valor padrão é desperdício; um framework de migração ainda não se paga | Adotar Alembic, ou recarregar o banco a cada coluna |
+| 39 | Agregação `RATE`: razão entre duas somas | Onde a linha é uma partida com contadores, aproveitamento é soma sobre soma; e o piso de amostra passa a cair sobre o denominador | Compor duas somas, perdendo o piso de amostra |
+| 40 | Sufixo `_ag` nas chaves da camada agregada | Medem a mesma ideia por outro caminho; chave única impede uma esconder a outra no catálogo | Reaproveitar a mesma chave nas duas camadas |
+| 41 | A nota da fonte não vira métrica | Número de modelo fechado contradiz a rastreabilidade que o trabalho defende | Expor a nota como métrica pronta |
+| 42 | Baixar e carregar são comandos separados | Baixar depende de cota e leva dias; carregar lê disco e leva segundos, então corrigir o mapeamento não custa requisição | Um comando só, que busca e grava |
+| 43 | A recusa do plano vira dado, não exceção | A mensagem traz o intervalo de temporadas liberado: é cobertura disfarçada de erro | Tratar como falha e parar |
+| 44 | Tipos de competição por tabela explícita | A heurística "país igual a World" classificou a Copa América, torneio de seleções, como competição de clubes | Deduzir o tipo do país e do nome |
+| 45 | Onde o gráfico não se aplica, a tela explica | Gráfico vazio e gráfico inaplicável parecem iguais e dizem coisas opostas | Renderizar o gráfico vazio |
 
 ---
 
@@ -464,6 +525,7 @@ FScout/
 ├── docs/
 │   ├── ARQUITETURA.md
 │   ├── FONTES.md
+│   ├── REPRODUCAO.md          Do clone à primeira tela, com os números de cada etapa
 │   └── ROADMAP.md
 └── data/
     ├── raw/                   Cache das fontes (fora do git)

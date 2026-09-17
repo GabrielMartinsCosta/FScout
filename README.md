@@ -94,6 +94,8 @@ fscout paises
 # Exige FSCOUT_API_FOOTBALL_KEY no .env (nunca no .env.example, que vai para o git).
 fscout api-football sondar          # o que o plano cobre, e se compensa
 fscout api-football baixar          # baixa a temporada, no que couber na cota de hoje
+fscout api-football carregar        # grava no banco o que está em cache (não usa rede)
+fscout api-football ligar           # une os atletas ao elenco canônico
 fscout api-football lesoes          # histórico de lesões da temporada
 
 # O plano gratuito dá 100 requisições/dia e uma temporada tem 380 partidas, então

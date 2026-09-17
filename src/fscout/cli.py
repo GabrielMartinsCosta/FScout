@@ -224,6 +224,16 @@ def weather() -> None:
         console.print(f"[yellow]conferir[/yellow] {name}: resultado não marcado como estádio")
 
 
+CAMADAS_LEGIVEIS = {"event": "evento", "aggregate": "agregado"}
+
+
+def _camadas(spec: object) -> str:
+    """Em que granularidade a métrica existe, por extenso."""
+    return " ".join(
+        CAMADAS_LEGIVEIS.get(str(camada), str(camada)) for camada in getattr(spec, "data_tiers", ())
+    )
+
+
 @app.command()
 def catalogo(
     familia: Annotated[str | None, typer.Argument(help="Filtra por família de métricas.")] = None,
@@ -239,13 +249,14 @@ def catalogo(
         raise typer.Exit(code=1)
 
     table = Table(title=f"Catálogo de métricas ({len(metricas)} de {len(REGISTRY)})")
-    for coluna in ("chave", "métrica", "família", "unidade", "tipo", "por 90", "sentido"):
+    for coluna in ("chave", "métrica", "família", "camada", "unidade", "tipo", "por 90", "sentido"):
         table.add_column(coluna)
     for spec in metricas:
         table.add_row(
             spec.key,
             spec.label,
             spec.family,
+            _camadas(spec),
             str(spec.unit),
             str(getattr(spec, "aggregation", "composta")),
             "sim" if spec.per_90 else "não",
@@ -262,6 +273,9 @@ def catalogo(
                     "chave",
                     "metrica",
                     "familia",
+                    # Sem esta coluna o anexo de metodologia não distinguiria `gols` de
+                    # `gols_ag`, que medem a mesma ideia sobre granularidades diferentes.
+                    "camada",
                     "unidade",
                     "agregacao",
                     "por_90",
@@ -276,6 +290,7 @@ def catalogo(
                         spec.key,
                         spec.label,
                         spec.family,
+                        _camadas(spec),
                         str(spec.unit),
                         str(getattr(spec, "aggregation", "composta")),
                         "sim" if spec.per_90 else "nao",
